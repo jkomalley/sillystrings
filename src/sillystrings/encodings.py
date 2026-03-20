@@ -1,22 +1,28 @@
 from collections.abc import Iterator
 
 
-def is_printable(byte: int, encoding: str = "utf-8") -> bool:
+def is_printable(byte: int, encoding: str, include_ws: bool = False) -> bool:
     """
     Check if a byte is printable in the given encoding.
+
+    Only meaningful for 's' and 'S' modes. For UTF-16 modes ('l', 'b'),
+    printability is determined by the byte pair inside iter_chars().
 
     Args:
         byte (int): The byte to check.
         encoding (str): The encoding to use for checking. Default is 'utf-8'.
+        include_ws (bool): Whether to include whitespace characters as printable. Default is False.
 
     Returns:
         bool: True if the byte is printable, False otherwise.
     """
-    try:
-        char = bytes([byte]).decode(encoding)
-        return char.isprintable()
-    except UnicodeDecodeError:
-        return False
+    if include_ws and byte in (0x09, 0x0A, 0x0D):  # Tab, LF, CR
+        return True
+    if encoding == "s":
+        return 0x20 <= byte <= 0x7E
+    elif encoding == "S":
+        return 0x20 <= byte <= 0x7E or byte >= 0xA0
+    return False
 
 
 def iter_chars(
@@ -33,9 +39,11 @@ def iter_chars(
     Yields:
         tuple[int, bool]: A tuple containing the byte value and a bool indicating if it's printable.
     """
-    for byte in data:
-        if include_ws:
-            is_printable_char = is_printable(byte, encoding) or chr(byte).isspace()
-        else:
-            is_printable_char = is_printable(byte, encoding)
-        yield byte, is_printable_char
+    if encoding in ("s", "S"):
+        for byte in data:
+            yield byte, is_printable(byte, encoding, include_ws)
+    elif encoding in ("l", "b"):
+        for i in range(0, len(data) - 1, 2):
+            char_bytes: bytes | memoryview[int] = data[i : i + 2]
+            char_value: int = int.from_bytes(char_bytes, "little" if encoding == "l" else "big")
+            yield char_value, is_printable(char_value, encoding, include_ws)
