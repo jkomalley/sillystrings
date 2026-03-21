@@ -1,5 +1,6 @@
 # src/sillystrings/encodings.py
 from collections.abc import Iterator
+from typing import Literal
 
 
 def is_printable_ascii(byte: int, encoding: str = "s", include_ws: bool = False) -> bool:
@@ -56,7 +57,8 @@ def iter_chars(
         for i, byte in enumerate(data):
             yield i, is_printable_ascii(byte, encoding, include_ws)
     elif encoding in ("l", "b"):
+        byteorder: Literal["little", "big"] = "little" if encoding == "l" else "big"
         for i in range(0, len(data) - 1, 2):
             char_bytes: bytes | memoryview = data[i : i + 2]
-            char_value: int = int.from_bytes(char_bytes, "little" if encoding == "l" else "big")
+            char_value: int = int.from_bytes(bytes=char_bytes, byteorder=byteorder)
             yield i, is_printable_utf16(char_value, include_ws)
