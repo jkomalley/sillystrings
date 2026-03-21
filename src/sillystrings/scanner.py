@@ -12,7 +12,24 @@ def scan(
     encoding: Literal["s", "S", "l", "b"] = "s",
     include_whitespace: bool = False,
 ) -> Iterator[tuple[int, str]]:
-    """Yield (byte_offset, string) for each printable run in data."""
+    """
+    Scan a byte sequence for printable strings based on the specified encoding.
+
+    Args:
+        data (bytes | memoryview): The byte sequence to scan.
+        min_length (int): The minimum length of strings to yield. Default is 4.
+        encoding (Literal["s", "S", "l", "b"]): The encoding to use for scanning. Default is 's'.
+            - 's' for 7-bit ASCII
+            - 'S' for 8-bit extended ASCII
+            - 'l' for UTF-16 little-endian
+            - 'b' for UTF-16 big-endian
+            Default is 's'
+        include_whitespace (bool): Whether to include whitespace characters as part of the strings.
+            Default is False.
+
+    Yields:
+        tuple[int, str]: The byte offset of the string's first byte, and the string itself.
+    """
     if encoding in ("s", "S"):
         yield from _scan_ascii(
             data, min_length=min_length, encoding=encoding, include_whitespace=include_whitespace
