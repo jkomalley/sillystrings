@@ -1,3 +1,4 @@
+# src/sillystrings/encodings.py
 from collections.abc import Iterator
 
 
