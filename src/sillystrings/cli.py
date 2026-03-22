@@ -1,5 +1,6 @@
 # src/sillystrings/cli.py
 import argparse
+import sys
 from dataclasses import dataclass
 
 from sillystrings.__version__ import __version__
@@ -13,6 +14,13 @@ class Source:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """
+    Build the argument parser for the sillystrings command-line interface.
+
+    Returns:
+        An instance of argparse.ArgumentParser configured with the appropriate arguments and options
+        for the sillystrings CLI
+    """
     parser = argparse.ArgumentParser(
         prog="sillystrings",
         description="sillystrings - find the printable strings in a object, or other binary, file",
@@ -20,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "files",
         metavar="FILE",
-        nargs="+",
+        nargs="*",
         type=argparse.FileType("rb"),
         help="the file(s) to search for printable strings",
     )
@@ -31,27 +39,67 @@ def build_parser() -> argparse.ArgumentParser:
         dest="min_length",
         type=int,
         default=4,
-        help="the minimum length of a string to be considered printable (default: 4)",
+        help=(
+            "Print sequences of displayable characters that are at least"
+            " min-len characters long. If not specified a default minimum"
+            " length of 4 is used. The distinction between displayable"
+            " and non-displayable characters depends upon the setting of"
+            " the -e and -U options. Sequences are always terminated at"
+            " control characters such as new-line and carriage-return,"
+            " but not the tab character."
+        ),
+    )
+    parser.add_argument(
+        "-t",
+        "--radix",
+        choices=("d", "o", "x"),
+        help=(
+            "Print the offset within the file before each string."
+            " The single character argument specifies the radix of"
+            " the offset - o for octal, x for hexadecimal, or d"
+            " for decimal"
+        ),
     )
     parser.add_argument(
         "-e",
         "--encoding",
         choices=("s", "S", "l", "b"),
         default="s",
-        help="s=7-bit ASCII (default), S=8-bit, l=UTF-16 LE, b=UTF-16 BE",
+        help=(
+            "Select the character encoding of the strings that are to"
+            " be found. Possible values for encoding are:"
+            " s = single-7-bit-byte characters (default),"
+            " S = single-8-bit-byte characters,"
+            " b = 16-bit big-endian, l = 16-bit little-endian,"
+            " B = 32-bit big-endian, L = 32-bit little-endian."
+            " Useful for finding wide character strings. (l and b"
+            " apply to, for example, Unicode UTF-16/UCS-2 encodings)."
+        ),
     )
     parser.add_argument(
         "-w",
-        "--include-whitespace",
+        "--include-all-whitespace",
         action="store_true",
-        help="include all whitespace characters in the output strings",
+        help=(
+            "By default tab and space characters are included in the"
+            " strings that are displayed, but other whitespace"
+            " characters, such a newlines and carriage returns, are"
+            " not. The -w option changes this so that all whitespace"
+            " characters are considered to be part of a string."
+        ),
+    )
+    parser.add_argument(
+        "-f",
+        "--print-file-name",
+        action="store_true",
+        help="Print the name of the file before each string.",
     )
     parser.add_argument(
         "-v",
         "--version",
         action="version",
         version=f"sillystrings {__version__}",
-        help="show the version number and exit",
+        help="Shows the version number and exits.",
     )
     return parser
 
@@ -69,7 +117,7 @@ def format_offset(offset: int, radix: str | None) -> str:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    args: argparse.Namespace = build_parser().parse_args()
 
     sources: list[Source] = []
 
@@ -77,18 +125,20 @@ def main() -> None:
         for f in args.files:
             sources.append(Source(f.name, f.read()))
             f.close()
+    else:
+        sources.append(Source("<stdin>", sys.stdin.buffer.read()))
 
-    print(f"min_length: {args.min_length}")
+    multiple: bool = len(sources) > 1
 
     for source in sources:
-        print(f"Source: {source.name} ({len(source.data) / (1024 * 1024):.1f} MB)")
+        prefix = f"{source.name}: " if (multiple or args.print_file_name) else ""
         for offset, string in scan(
             source.data,
             min_length=args.min_length,
             encoding=args.encoding,
-            include_whitespace=args.include_whitespace,
+            include_whitespace=args.include_all_whitespace,
         ):
-            print(f"{format_offset(offset, None)}{string}")
+            print(f"{prefix}{format_offset(offset, args.radix)}{string}")
 
 
 if __name__ == "__main__":
