@@ -484,6 +484,536 @@ git tag v0.1.0
 
 ---
 
+## Part 3: Max String Length Limit
+
+macOS `strings` has a hardcoded 1022-character buffer. When a printable run
+exceeds that limit, the first 1022 characters are output as a string, and
+scanning continues from the very next byte — byte 1023 starts a fresh
+accumulator. If it's printable, it begins a new string candidate.
+
+This means a 2050-character run produces three strings: 1022, 1022, and 6.
+sillystrings currently has no limit, so it happily produces strings up to ~2M
+characters long. Time to fix that.
+
+### Step 1 — Add `max_length` Parameter to `scan()`
+
+Add a new keyword-only parameter:
+
+```python
+def scan(
+    data: bytes | memoryview,
+    *,
+    min_length: int = 4,
+    encoding: Literal["s", "S", "l", "b"] = "s",
+    include_whitespace: bool = False,
+    max_length: int | None = 1022,
+) -> Iterator[tuple[int, str]]:
+```
+
+- Type is `int | None`. `None` means no limit. Default `1022` matches macOS.
+- Pass `max_length` through to both `_scan_ascii()` and `_scan_utf16()`.
+
+If you haven't already split out a `_scan_ascii()` helper, now is a good time.
+The `scan()` function should dispatch to `_scan_ascii()` for `"s"` and `"S"`
+encodings, and `_scan_utf16()` for `"l"` and `"b"`. Both helpers receive all
+the parameters including `max_length`.
+
+### Step 2 — Modify `_scan_ascii()`
+
+Add `max_length: int | None` to the parameter list. Inside the `if printable:`
+branch, after `acc.append(data[offset])`, add a forced-flush check:
+
+```python
+if max_length is not None and len(acc) >= max_length:
+    yield acc_start, acc.decode(codec)
+    acc.clear()
+```
+
+After the forced flush, `acc` is empty. The loop naturally continues to the
+next byte. If that byte is printable, `acc_start` is set to its offset (via the
+existing `if not acc: acc_start = offset` logic), starting a new string. If
+not, the normal non-printable flush path handles it.
+
+### Step 3 — Modify `_scan_utf16()` Identically
+
+Same pattern, but with `acc_chars` (a `list[str]`) instead of `bytearray`.
+`max_length` applies to character count (not byte count), so:
+
+```python
+if max_length is not None and len(acc_chars) >= max_length:
+    yield acc_start, "".join(acc_chars)
+    acc_chars.clear()
+```
+
+### Step 4 — CLI Flags in `build_parser()`
+
+Add two flags that share a single `dest`:
+
+```python
+parser.add_argument(
+    "--max-length", dest="max_length", type=int, default=1022, metavar="NUM",
+    help="maximum string length before forced break (default: 1022)",
+)
+parser.add_argument(
+    "--no-max-length", dest="max_length", action="store_const", const=None,
+    help="disable the maximum string length limit",
+)
+```
+
+Both write to `dest="max_length"`. The last one specified wins — standard
+argparse behavior. Pass `args.max_length` to `scan()`.
+
+### Step 5 — Tests
+
+Add these test cases to `test_scanner.py`:
+
+| Scenario | `max_length` | Input length | Expected results |
+|---|---|---|---|
+| No limit | `None` | 2000 chars | One result: 2000 |
+| Below limit | `1022` | 500 chars | One result: 500 |
+| Exact limit | `1022` | 1022 chars | One result: 1022 |
+| One over | `1022` | 1023 chars | One result: 1022 (remainder 1 < `min_length`) |
+| Two full chunks | `1022` | 2044 chars | Two results: 1022, 1022 |
+| Two chunks + remainder | `1022` | 2050 chars | Three results: 1022, 1022, 6 |
+| Small limit | `10` | 25 chars | Three results: 10, 10, 5 |
+| Break before limit | `1022` | `b"A"*500 + b"\x00" + b"B"*500` | Two results: 500, 500 |
+| UTF-16 LE | `1022` | 1025 UTF-16 chars | Byte offsets spaced at 2 bytes per char |
+| Remainder below min_length | `1022` | 1025 chars, `min_length=4` | One result: 1022 (remainder 3 dropped) |
+
+For the UTF-16 test, verify that byte offsets are correct — each character is 2
+bytes wide, so the second chunk should start at byte offset `1022 * 2 = 2044`.
+
+### Step 6 — Verification
+
+Create a file with a long printable run and compare against macOS `strings`:
+
+```bash
+python3 -c "open('/tmp/longrun.bin','wb').write(b'A'*2050)"
+diff <(env LC_ALL=C strings - /tmp/longrun.bin) <(uv run sillystrings --scan-all-bytes /tmp/longrun.bin)
+```
+
+If the diff is empty, you match. If not, examine the differences — they should
+only be in string lengths, and you can adjust `max_length` if needed.
+
+Run the full test suite and commit:
+
+```
+uv run ruff check . --fix && uv run ruff format . && uv run ty check
+uv run pytest -v
+git add . && git commit -m "add max_length support to scan()"
+```
+
+---
+
+## Part 4: Mach-O Section-Aware Scanning
+
+macOS `strings` doesn't just scan every byte of a file. When it encounters a
+Mach-O object file (the standard binary format on macOS/iOS), it parses the
+file's section table and scans only the initialized data sections — skipping the
+`(__TEXT,__text)` section, which contains machine code, not human-readable
+strings.
+
+This is why `strings /usr/bin/ls` and `strings - /usr/bin/ls` produce different
+output on macOS: the first parses Mach-O and skips code sections; the second
+(with `-`) scans all bytes blindly.
+
+After this part, sillystrings will have the same behavior:
+- **Default:** parse Mach-O, scan all sections except `(__TEXT,__text)`.
+- **`-a` / `--scan-all`:** parse Mach-O, scan ALL sections (including `__text`).
+- **`--scan-all-bytes`:** ignore file format entirely, scan all bytes.
+- **Non-Mach-O files:** scan all bytes (same as `--scan-all-bytes`).
+
+### Architecture
+
+The scanner stays generic — it just receives byte slices. A new module
+`macho.py` handles all format parsing and returns byte ranges to scan:
+
+```
+cli.py  →  macho.py (new)
+        →  scanner.py  →  encodings.py
+```
+
+### Step 1 — Create `src/sillystrings/macho.py` with Data Structures
+
+Start with the constants and data class:
+
+```python
+import struct
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Section:
+    segname: str     # e.g. "__TEXT"
+    sectname: str    # e.g. "__text"
+    offset: int      # file offset to section data
+    size: int        # size in bytes
+
+
+# Mach-O magic numbers
+MACHO_MAGIC_32    = 0xFEEDFACE
+MACHO_MAGIC_32_LE = 0xCEFAEDFE
+MACHO_MAGIC_64    = 0xFEEDFACF
+MACHO_MAGIC_64_LE = 0xCFFAEDFE
+FAT_MAGIC         = 0xCAFEBABE
+
+# Load command types
+LC_SEGMENT        = 0x01
+LC_SEGMENT_64     = 0x19
+```
+
+### Step 2 — `is_macho(data)` → `bool`
+
+Read the first 4 bytes as a big-endian `uint32` and check against all 5 magic
+numbers:
+
+```python
+def is_macho(data: bytes | memoryview) -> bool:
+    if len(data) < 4:
+        return False
+    magic = struct.unpack_from(">I", data, 0)[0]
+    return magic in (
+        MACHO_MAGIC_32, MACHO_MAGIC_32_LE,
+        MACHO_MAGIC_64, MACHO_MAGIC_64_LE,
+        FAT_MAGIC,
+    )
+```
+
+Note: reading as big-endian is just for the comparison. The actual magic bytes
+`0xCFFAEDFE` (64-bit LE) are `CF FA ED FE` in the file — when read as
+big-endian that gives `0xCFFAEDFE`, which matches the constant.
+
+### Step 3 — `_detect_endian_and_bits(data, offset)` → `tuple[str, bool]`
+
+Given an offset into the file (0 for single Mach-O, or the slice offset for fat
+binaries), determine the endianness and bitness:
+
+```python
+def _detect_endian_and_bits(
+    data: bytes | memoryview, offset: int
+) -> tuple[str, bool]:
+    """Return (endian_char, is_64bit) for the Mach-O at the given offset."""
+    magic = struct.unpack_from(">I", data, offset)[0]
+    match magic:
+        case 0xFEEDFACF: return (">", True)    # 64-bit BE
+        case 0xCFFAEDFE: return ("<", True)     # 64-bit LE
+        case 0xFEEDFACE: return (">", False)    # 32-bit BE
+        case 0xCEFAEDFE: return ("<", False)    # 32-bit LE
+        case _:
+            raise ValueError(f"not a Mach-O magic: 0x{magic:08X}")
+```
+
+### Step 4 — `_parse_sections(data, base_offset)` → `list[Section]`
+
+This is the main parsing function. It reads the Mach-O header, then walks
+through the load commands looking for `LC_SEGMENT` / `LC_SEGMENT_64`:
+
+```python
+def _parse_sections(
+    data: bytes | memoryview, base_offset: int
+) -> list[Section]:
+    endian, is_64 = _detect_endian_and_bits(data, base_offset)
+
+    # Read header to get ncmds
+    if is_64:
+        header = struct.unpack_from(f"{endian}8I", data, base_offset)
+        cmd_offset = base_offset + 32  # 64-bit header is 32 bytes
+    else:
+        header = struct.unpack_from(f"{endian}7I", data, base_offset)
+        cmd_offset = base_offset + 28  # 32-bit header is 28 bytes
+
+    ncmds = header[4]
+    sections: list[Section] = []
+
+    for _ in range(ncmds):
+        cmd, cmdsize = struct.unpack_from(f"{endian}2I", data, cmd_offset)
+
+        if cmd == LC_SEGMENT_64 and is_64:
+            sections.extend(
+                _parse_segment_sections_64(data, cmd_offset, endian)
+            )
+        elif cmd == LC_SEGMENT and not is_64:
+            sections.extend(
+                _parse_segment_sections_32(data, cmd_offset, endian)
+            )
+
+        cmd_offset += cmdsize
+
+    return sections
+```
+
+The header fields by index:
+
+| Index | 32-bit | 64-bit |
+|---|---|---|
+| 0 | magic | magic |
+| 1 | cputype | cputype |
+| 2 | cpusubtype | cpusubtype |
+| 3 | filetype | filetype |
+| 4 | **ncmds** | **ncmds** |
+| 5 | sizeofcmds | sizeofcmds |
+| 6 | flags | flags |
+| 7 | — | reserved |
+
+### Step 5 — Segment and Section Parsing
+
+These two functions parse the sections within an `LC_SEGMENT_64` or
+`LC_SEGMENT` load command.
+
+**64-bit segments:**
+
+```python
+def _parse_segment_sections_64(
+    data: bytes | memoryview, cmd_offset: int, endian: str
+) -> list[Section]:
+    # LC_SEGMENT_64 structure: '{e}2I16s4Q4I' = 72 bytes
+    seg = struct.unpack_from(f"{endian}2I16s4Q4I", data, cmd_offset)
+    nsects = seg[9]
+
+    sections: list[Section] = []
+    sect_offset = cmd_offset + 72  # sections start after segment header
+
+    for _ in range(nsects):
+        # section_64 structure: '{e}16s16s2Q8I' = 80 bytes
+        s = struct.unpack_from(f"{endian}16s16s2Q8I", data, sect_offset)
+        sectname = s[0].rstrip(b"\x00").decode("ascii", errors="replace")
+        segname = s[1].rstrip(b"\x00").decode("ascii", errors="replace")
+        size = s[3]
+        offset = s[4]
+        sections.append(Section(segname=segname, sectname=sectname,
+                                offset=offset, size=size))
+        sect_offset += 80
+
+    return sections
+```
+
+**32-bit segments:**
+
+```python
+def _parse_segment_sections_32(
+    data: bytes | memoryview, cmd_offset: int, endian: str
+) -> list[Section]:
+    # LC_SEGMENT structure: '{e}2I16s8I' = 56 bytes
+    seg = struct.unpack_from(f"{endian}2I16s8I", data, cmd_offset)
+    nsects = seg[9]
+
+    sections: list[Section] = []
+    sect_offset = cmd_offset + 56  # sections start after segment header
+
+    for _ in range(nsects):
+        # section (32-bit) structure: '{e}16s16s9I' = 68 bytes
+        s = struct.unpack_from(f"{endian}16s16s9I", data, sect_offset)
+        sectname = s[0].rstrip(b"\x00").decode("ascii", errors="replace")
+        segname = s[1].rstrip(b"\x00").decode("ascii", errors="replace")
+        size = s[3]
+        offset = s[4]
+        sections.append(Section(segname=segname, sectname=sectname,
+                                offset=offset, size=size))
+        sect_offset += 68
+
+    return sections
+```
+
+**Struct format string reference table:**
+
+| Structure | Format | Size (bytes) | Key fields (by index) |
+|---|---|---|---|
+| Mach-O header 64 | `'{e}8I'` | 32 | ncmds=4, sizeofcmds=5 |
+| Mach-O header 32 | `'{e}7I'` | 28 | ncmds=4, sizeofcmds=5 |
+| Load cmd header | `'{e}2I'` | 8 | cmd=0, cmdsize=1 |
+| LC_SEGMENT_64 | `'{e}2I16s4Q4I'` | 72 | segname=2, nsects=9 |
+| LC_SEGMENT | `'{e}2I16s8I'` | 56 | segname=2, nsects=9 |
+| section_64 | `'{e}16s16s2Q8I'` | 80 | sectname=0, segname=1, size=3, offset=4 |
+| section (32) | `'{e}16s16s9I'` | 68 | sectname=0, segname=1, size=3, offset=4 |
+| Fat header | `'>2I'` | 8 | magic=0, nfat_arch=1 (always BE) |
+| Fat arch | `'>5I'` | 20 | offset=2, size=3 (always BE) |
+
+Where `{e}` is `<` or `>` based on magic number.
+
+### Step 6 — `_parse_fat_binary(data)` → `list[tuple[int, list[Section]]]`
+
+Fat (universal) binaries contain multiple Mach-O slices (one per architecture).
+The fat header is always big-endian, regardless of the endianness of the
+contained slices:
+
+```python
+def _parse_fat_binary(
+    data: bytes | memoryview,
+) -> list[tuple[int, list[Section]]]:
+    # Fat header: '>2I' = (magic, nfat_arch), always big-endian
+    _, nfat_arch = struct.unpack_from(">2I", data, 0)
+
+    results: list[tuple[int, list[Section]]] = []
+    arch_offset = 8  # fat_arch entries start after the 8-byte header
+
+    for _ in range(nfat_arch):
+        # fat_arch: '>5I' = (cputype, cpusubtype, offset, size, align)
+        arch = struct.unpack_from(">5I", data, arch_offset)
+        slice_offset = arch[2]
+        sections = _parse_sections(data, slice_offset)
+        results.append((slice_offset, sections))
+        arch_offset += 20
+
+    return results
+```
+
+### Step 7 — Public API: `get_scan_ranges()`
+
+This is what `cli.py` calls. It returns a list of `(offset, size)` tuples
+representing the byte ranges to scan:
+
+```python
+def get_scan_ranges(
+    data: bytes | memoryview, *, include_all: bool = False
+) -> list[tuple[int, int]]:
+    if not is_macho(data):
+        return [(0, len(data))]
+
+    try:
+        magic = struct.unpack_from(">I", data, 0)[0]
+
+        if magic == FAT_MAGIC:
+            all_sections: list[Section] = []
+            for _, sections in _parse_fat_binary(data):
+                all_sections.extend(sections)
+        else:
+            all_sections = _parse_sections(data, 0)
+
+        ranges: list[tuple[int, int]] = []
+        for section in all_sections:
+            if section.size == 0:
+                continue
+            if (not include_all
+                    and section.segname == "__TEXT"
+                    and section.sectname == "__text"):
+                continue
+            ranges.append((section.offset, section.size))
+
+        return ranges if ranges else [(0, len(data))]
+
+    except struct.error:
+        # Corrupt or truncated Mach-O — fall back to whole-file scan
+        return [(0, len(data))]
+```
+
+Key behaviors:
+- Non-Mach-O files: returns `[(0, len(data))]` — scan everything.
+- By default, skips only the exact section `(__TEXT,__text)` — not
+  `(__TEXT,__textcoal_nt)`, not `(__DATA,__text)`.
+- With `include_all=True`, includes everything.
+- Skips zero-size sections.
+- Wraps parsing in `try/except struct.error` — corrupt Mach-O falls back to
+  whole-file scan rather than crashing.
+
+### Step 8 — CLI Changes
+
+Update `build_parser()` in `cli.py`. Replace the existing `-a` / `--all` flag
+with proper Mach-O-aware flags:
+
+```python
+parser.add_argument(
+    "-a", "--scan-all", action="store_true", default=False,
+    help="scan all sections of Mach-O files (including __text)",
+)
+parser.add_argument(
+    "--scan-all-bytes", action="store_true", default=False,
+    help="scan all bytes regardless of file format",
+)
+```
+
+Remove the old `-a` / `--all` compatibility flag — it's being replaced with
+real functionality.
+
+### Step 9 — Modify `main()` to Use Section-Aware Scanning
+
+```python
+from sillystrings.macho import get_scan_ranges, is_macho
+
+# Inside main(), for each source:
+if args.scan_all_bytes or not is_macho(source.data):
+    ranges = [(0, len(source.data))]
+else:
+    ranges = get_scan_ranges(source.data, include_all=args.scan_all)
+
+for range_offset, range_size in ranges:
+    section_data = memoryview(source.data)[range_offset:range_offset + range_size]
+    for offset, string in scan(section_data, ...):
+        true_offset = range_offset + offset  # adjust to file-level offset
+        print(string)  # or with offset formatting using true_offset
+```
+
+**Critical detail:** `scan()` returns offsets relative to the slice it receives.
+You must add `range_offset` to get the true file-level offset. Use `memoryview`
+for the slice to avoid copying data.
+
+### Step 10 — Tests
+
+Create `tests/test_macho.py`. Include a helper function that builds a minimal
+synthetic 64-bit LE Mach-O for unit testing — this avoids depending on external
+binaries:
+
+```python
+def build_macho_64_le(
+    sections: list[tuple[str, str, int, int]],
+) -> bytearray:
+    """Build a minimal 64-bit LE Mach-O from (segname, sectname, offset, size) tuples.
+
+    Groups sections by segment name automatically.
+    """
+    ...
+```
+
+The helper should:
+1. Group sections by `segname`.
+2. Build one `LC_SEGMENT_64` load command per unique segment.
+3. Append section headers within each segment command.
+4. Build the Mach-O header with `magic=0xCFFAEDFE`, `ncmds`, and `sizeofcmds`.
+5. Return a `bytearray` of the complete file.
+
+**Test cases:**
+
+| Test | What it checks |
+|---|---|
+| `is_macho` — all 5 magics | Detects 32/64 BE/LE and fat magic |
+| `is_macho` — non-Mach-O | Returns `False` for random bytes, empty data, short data |
+| `_parse_sections` | Correct names, offsets, and sizes from synthetic Mach-O |
+| `get_scan_ranges` — default | Excludes `(__TEXT,__text)`, includes all other sections |
+| `get_scan_ranges` — `include_all` | Includes everything including `(__TEXT,__text)` |
+| `get_scan_ranges` — non-Mach-O | Returns `[(0, len)]` |
+| Exact name match | `(__TEXT,__textcoal_nt)` is NOT excluded (only exact `__text`) |
+| Exact segment match | `(__DATA,__text)` is NOT excluded (segment must be `__TEXT`) |
+| Fat binary | Parses slice offsets and collects sections from all architectures |
+| Corrupt/truncated Mach-O | Falls back to `[(0, len)]` without crashing |
+| Smoke test | Against `fixtures/tool.bin` if available (skip if not) |
+
+### Step 11 — Verification Against Real macOS `strings`
+
+```bash
+diff <(env LC_ALL=C strings fixtures/tool.bin) \
+     <(uv run sillystrings fixtures/tool.bin)
+
+diff <(env LC_ALL=C strings -a fixtures/tool.bin) \
+     <(uv run sillystrings -a fixtures/tool.bin)
+
+diff <(env LC_ALL=C strings - fixtures/tool.bin) \
+     <(uv run sillystrings --scan-all-bytes fixtures/tool.bin)
+```
+
+> **Note:** `LC_ALL=C` is needed because macOS `strings` uses the
+> locale-dependent `isprint()` function. In UTF-8 locales, it considers high
+> bytes (0x80–0xFF) printable. The C locale restricts to 0x20–0x7E, matching
+> sillystrings' `-e s` behavior.
+
+Run the full test suite and commit:
+
+```
+uv run ruff check . --fix && uv run ruff format . && uv run ty check
+uv run pytest -v
+git add . && git commit -m "add Mach-O section-aware scanning"
+```
+
+---
+
 ---
 
 # Reference
@@ -583,6 +1113,7 @@ loop ends. Write a test for this case first.
 ```python
 # src/sillystrings/scanner.py
 from collections.abc import Iterator
+from typing import Literal
 
 from sillystrings.encodings import iter_chars
 
@@ -591,8 +1122,9 @@ def scan(
     data: bytes | memoryview,
     *,
     min_length: int = 4,
-    encoding: str = "s",
+    encoding: Literal["s", "S", "l", "b"] = "s",
     include_whitespace: bool = False,
+    max_length: int | None = 1022,
 ) -> Iterator[tuple[int, str]]:
     """Yield (byte_offset, string) for each printable run in data."""
     if encoding in ("l", "b"):
@@ -601,6 +1133,7 @@ def scan(
             min_length=min_length,
             encoding=encoding,
             include_whitespace=include_whitespace,
+            max_length=max_length,
         )
         return
 
@@ -613,6 +1146,9 @@ def scan(
             if not acc:
                 acc_start = offset
             acc.append(data[offset])
+            if max_length is not None and len(acc) >= max_length:
+                yield acc_start, acc.decode(codec)
+                acc.clear()
         else:
             if len(acc) >= min_length:
                 yield acc_start, acc.decode(codec)
@@ -628,6 +1164,7 @@ def _scan_utf16(
     min_length: int,
     encoding: str,
     include_whitespace: bool,
+    max_length: int | None,
 ) -> Iterator[tuple[int, str]]:
     acc_chars: list[str] = []
     acc_start = 0
@@ -640,6 +1177,9 @@ def _scan_utf16(
             # For BE: the ASCII codepoint is the low byte at data[offset + 1]
             low = data[offset] if encoding == "l" else data[offset + 1]
             acc_chars.append(chr(low))
+            if max_length is not None and len(acc_chars) >= max_length:
+                yield acc_start, "".join(acc_chars)
+                acc_chars.clear()
         else:
             if len(acc_chars) >= min_length:
                 yield acc_start, "".join(acc_chars)
@@ -658,6 +1198,7 @@ def _scan_utf16(
 import argparse
 import sys
 
+from sillystrings.macho import get_scan_ranges, is_macho
 from sillystrings.scanner import scan
 
 
@@ -694,11 +1235,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("-w", "--include-all-whitespace", action="store_true")
     p.add_argument(
-        "-a", "--all",
-        action="store_true",
-        help="scan entire file (already the default; accepted for compatibility)",
+        "-a", "--scan-all", action="store_true", default=False,
+        help="scan all sections of Mach-O files (including __text)",
+    )
+    p.add_argument(
+        "--scan-all-bytes", action="store_true", default=False,
+        help="scan all bytes regardless of file format",
     )
     p.add_argument("-f", "--print-file-name", action="store_true")
+    p.add_argument(
+        "--max-length", dest="max_length", type=int, default=1022, metavar="NUM",
+        help="maximum string length before forced break (default: 1022)",
+    )
+    p.add_argument(
+        "--no-max-length", dest="max_length", action="store_const", const=None,
+        help="disable the maximum string length limit",
+    )
     return p
 
 
@@ -721,19 +1273,305 @@ def main() -> None:
             f.close()
     multiple = len(sources) > 1
     for name, data in sources:
-        for offset, string in scan(
-            data,
-            min_length=args.min_length,
-            encoding=args.encoding,
-            include_whitespace=args.include_all_whitespace,
-        ):
-            prefix = f"{name}: " if (multiple or args.print_file_name) else ""
-            print(f"{prefix}{format_offset(offset, args.radix)}{string}")
+        if args.scan_all_bytes or not is_macho(data):
+            ranges = [(0, len(data))]
+        else:
+            ranges = get_scan_ranges(data, include_all=args.scan_all)
+
+        for range_offset, range_size in ranges:
+            section_data = memoryview(data)[range_offset:range_offset + range_size]
+            for offset, string in scan(
+                section_data,
+                min_length=args.min_length,
+                encoding=args.encoding,
+                include_whitespace=args.include_all_whitespace,
+                max_length=args.max_length,
+            ):
+                true_offset = range_offset + offset
+                prefix = f"{name}: " if (multiple or args.print_file_name) else ""
+                print(f"{prefix}{format_offset(true_offset, args.radix)}{string}")
 ```
 
 > **Note:** `argparse.FileType("rb")` opens files during `parse_args()`, so
 > error messages for missing files come from argparse rather than your own code.
 > That's a reasonable tradeoff for a project of this size.
+>
+> **Note:** `scan()` returns offsets relative to the slice it receives. The
+> `range_offset + offset` calculation converts to file-level offsets. Using
+> `memoryview` for slicing avoids copying data.
+
+---
+
+## `macho.py` — Full Implementation
+
+```python
+# src/sillystrings/macho.py
+"""Mach-O binary format parser for section-aware string scanning."""
+
+import struct
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Section:
+    segname: str
+    sectname: str
+    offset: int
+    size: int
+
+
+MACHO_MAGIC_32 = 0xFEEDFACE
+MACHO_MAGIC_32_LE = 0xCEFAEDFE
+MACHO_MAGIC_64 = 0xFEEDFACF
+MACHO_MAGIC_64_LE = 0xCFFAEDFE
+FAT_MAGIC = 0xCAFEBABE
+LC_SEGMENT = 0x01
+LC_SEGMENT_64 = 0x19
+
+
+def is_macho(data: bytes | memoryview) -> bool:
+    """Return True if data begins with a Mach-O or fat binary magic number."""
+    if len(data) < 4:
+        return False
+    magic = struct.unpack_from(">I", data, 0)[0]
+    return magic in (
+        MACHO_MAGIC_32,
+        MACHO_MAGIC_32_LE,
+        MACHO_MAGIC_64,
+        MACHO_MAGIC_64_LE,
+        FAT_MAGIC,
+    )
+
+
+def _detect_endian_and_bits(
+    data: bytes | memoryview, offset: int
+) -> tuple[str, bool]:
+    """Return (endian_char, is_64bit) for the Mach-O at the given offset."""
+    magic = struct.unpack_from(">I", data, offset)[0]
+    match magic:
+        case 0xFEEDFACF:
+            return (">", True)
+        case 0xCFFAEDFE:
+            return ("<", True)
+        case 0xFEEDFACE:
+            return (">", False)
+        case 0xCEFAEDFE:
+            return ("<", False)
+        case _:
+            raise ValueError(f"not a Mach-O magic: 0x{magic:08X}")
+
+
+def _parse_segment_sections_64(
+    data: bytes | memoryview, cmd_offset: int, endian: str
+) -> list[Section]:
+    seg = struct.unpack_from(f"{endian}2I16s4Q4I", data, cmd_offset)
+    nsects = seg[9]
+
+    sections: list[Section] = []
+    sect_offset = cmd_offset + 72
+
+    for _ in range(nsects):
+        s = struct.unpack_from(f"{endian}16s16s2Q8I", data, sect_offset)
+        sectname = s[0].rstrip(b"\x00").decode("ascii", errors="replace")
+        segname = s[1].rstrip(b"\x00").decode("ascii", errors="replace")
+        size = s[3]
+        offset = s[4]
+        sections.append(
+            Section(segname=segname, sectname=sectname, offset=offset, size=size)
+        )
+        sect_offset += 80
+
+    return sections
+
+
+def _parse_segment_sections_32(
+    data: bytes | memoryview, cmd_offset: int, endian: str
+) -> list[Section]:
+    seg = struct.unpack_from(f"{endian}2I16s8I", data, cmd_offset)
+    nsects = seg[9]
+
+    sections: list[Section] = []
+    sect_offset = cmd_offset + 56
+
+    for _ in range(nsects):
+        s = struct.unpack_from(f"{endian}16s16s9I", data, sect_offset)
+        sectname = s[0].rstrip(b"\x00").decode("ascii", errors="replace")
+        segname = s[1].rstrip(b"\x00").decode("ascii", errors="replace")
+        size = s[3]
+        offset = s[4]
+        sections.append(
+            Section(segname=segname, sectname=sectname, offset=offset, size=size)
+        )
+        sect_offset += 68
+
+    return sections
+
+
+def _parse_sections(
+    data: bytes | memoryview, base_offset: int
+) -> list[Section]:
+    """Parse all sections from a single Mach-O at base_offset."""
+    endian, is_64 = _detect_endian_and_bits(data, base_offset)
+
+    if is_64:
+        header = struct.unpack_from(f"{endian}8I", data, base_offset)
+        cmd_offset = base_offset + 32
+    else:
+        header = struct.unpack_from(f"{endian}7I", data, base_offset)
+        cmd_offset = base_offset + 28
+
+    ncmds = header[4]
+    sections: list[Section] = []
+
+    for _ in range(ncmds):
+        cmd, cmdsize = struct.unpack_from(f"{endian}2I", data, cmd_offset)
+
+        if cmd == LC_SEGMENT_64 and is_64:
+            sections.extend(
+                _parse_segment_sections_64(data, cmd_offset, endian)
+            )
+        elif cmd == LC_SEGMENT and not is_64:
+            sections.extend(
+                _parse_segment_sections_32(data, cmd_offset, endian)
+            )
+
+        cmd_offset += cmdsize
+
+    return sections
+
+
+def _parse_fat_binary(
+    data: bytes | memoryview,
+) -> list[tuple[int, list[Section]]]:
+    """Parse a fat (universal) binary and return sections for each slice."""
+    _, nfat_arch = struct.unpack_from(">2I", data, 0)
+
+    results: list[tuple[int, list[Section]]] = []
+    arch_offset = 8
+
+    for _ in range(nfat_arch):
+        arch = struct.unpack_from(">5I", data, arch_offset)
+        slice_offset = arch[2]
+        sections = _parse_sections(data, slice_offset)
+        results.append((slice_offset, sections))
+        arch_offset += 20
+
+    return results
+
+
+def get_scan_ranges(
+    data: bytes | memoryview, *, include_all: bool = False
+) -> list[tuple[int, int]]:
+    """Return (offset, size) pairs for the byte ranges to scan.
+
+    By default, excludes the (__TEXT,__text) section from Mach-O files.
+    Pass include_all=True to include all sections.
+    Returns [(0, len(data))] for non-Mach-O files or on parse failure.
+    """
+    if not is_macho(data):
+        return [(0, len(data))]
+
+    try:
+        magic = struct.unpack_from(">I", data, 0)[0]
+
+        if magic == FAT_MAGIC:
+            all_sections: list[Section] = []
+            for _, sections in _parse_fat_binary(data):
+                all_sections.extend(sections)
+        else:
+            all_sections = _parse_sections(data, 0)
+
+        ranges: list[tuple[int, int]] = []
+        for section in all_sections:
+            if section.size == 0:
+                continue
+            if (
+                not include_all
+                and section.segname == "__TEXT"
+                and section.sectname == "__text"
+            ):
+                continue
+            ranges.append((section.offset, section.size))
+
+        return ranges if ranges else [(0, len(data))]
+
+    except struct.error:
+        return [(0, len(data))]
+```
+
+### `build_macho_64_le()` — Test Helper
+
+Use this in `tests/test_macho.py` to build synthetic Mach-O files without
+depending on external binaries:
+
+```python
+def build_macho_64_le(
+    sections: list[tuple[str, str, int, int]],
+) -> bytearray:
+    """Build a minimal 64-bit LE Mach-O from (segname, sectname, offset, size) tuples."""
+    endian = "<"
+
+    # Group sections by segment name (preserving order)
+    segments: dict[str, list[tuple[str, str, int, int]]] = {}
+    for segname, sectname, offset, size in sections:
+        segments.setdefault(segname, []).append((segname, sectname, offset, size))
+
+    # Build load commands
+    load_commands = bytearray()
+    for segname, seg_sections in segments.items():
+        nsects = len(seg_sections)
+        # LC_SEGMENT_64 header: 72 bytes + 80 bytes per section
+        cmdsize = 72 + nsects * 80
+
+        # Segment header: cmd, cmdsize, segname[16], vmaddr, vmsize,
+        #                  fileoff, filesize, maxprot, initprot, nsects, flags
+        seg_name_bytes = segname.encode("ascii").ljust(16, b"\x00")[:16]
+        seg_header = struct.pack(
+            f"{endian}2I16s4Q4I",
+            LC_SEGMENT_64,  # cmd
+            cmdsize,        # cmdsize
+            seg_name_bytes, # segname
+            0, 0, 0, 0,    # vmaddr, vmsize, fileoff, filesize
+            0, 0,           # maxprot, initprot
+            nsects,         # nsects
+            0,              # flags
+        )
+        load_commands.extend(seg_header)
+
+        # Section headers
+        for s_segname, s_sectname, s_offset, s_size in seg_sections:
+            sect_name_bytes = s_sectname.encode("ascii").ljust(16, b"\x00")[:16]
+            s_seg_name_bytes = s_segname.encode("ascii").ljust(16, b"\x00")[:16]
+            sect_header = struct.pack(
+                f"{endian}16s16s2Q8I",
+                sect_name_bytes,    # sectname
+                s_seg_name_bytes,   # segname
+                0,                  # addr
+                s_size,             # size
+                s_offset,           # offset
+                0,                  # align
+                0, 0,               # reloff, nreloc
+                0, 0, 0, 0,        # flags, reserved1, reserved2, reserved3
+            )
+            load_commands.extend(sect_header)
+
+    # Mach-O header (64-bit): magic, cputype, cpusubtype, filetype,
+    #                          ncmds, sizeofcmds, flags, reserved
+    ncmds = len(segments)
+    header = struct.pack(
+        f"{endian}8I",
+        0xCFFAEDFE,             # magic (64-bit LE)
+        0x01000007,             # cputype (x86_64)
+        0x00000003,             # cpusubtype
+        0x00000002,             # filetype (MH_EXECUTE)
+        ncmds,                  # ncmds
+        len(load_commands),     # sizeofcmds
+        0,                      # flags
+        0,                      # reserved
+    )
+
+    return bytearray(header) + load_commands
+```
 
 ---
 
