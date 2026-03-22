@@ -208,4 +208,9 @@ __marimo__/
 
 # fixtures
 fixtures/
+
+# MacOS
 .DS_Store
+
+# Claude
+.claude/
