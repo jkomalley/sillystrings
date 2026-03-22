@@ -2,6 +2,7 @@
 import argparse
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from sillystrings.__version__ import __version__
 from sillystrings.scanner import scan
@@ -29,8 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
         "files",
         metavar="FILE",
         nargs="*",
-        type=argparse.FileType("rb"),
-        help="the file(s) to search for printable strings",
+        help="the file(s) to search for printable strings (use - for stdin)",
     )
     parser.add_argument(
         "-n",
@@ -121,12 +121,18 @@ def main() -> None:
 
     sources: list[Source] = []
 
-    if args.files:
-        for f in args.files:
-            sources.append(Source(f.name, f.read()))
-            f.close()
-    else:
+    if not args.files:
         sources.append(Source("<stdin>", sys.stdin.buffer.read()))
+    else:
+        for name in args.files:
+            if name == "-":
+                sources.append(Source("<stdin>", sys.stdin.buffer.read()))
+            else:
+                path = Path(name)
+                if not path.is_file():
+                    print(f"sillystrings: {name}: No such file", file=sys.stderr)
+                    sys.exit(1)
+                sources.append(Source(name, path.read_bytes()))
 
     multiple: bool = len(sources) > 1
 
