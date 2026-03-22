@@ -124,7 +124,7 @@ quote-style = "double"
 > where to find first-party imports. Without it, ruff may misclassify
 > `sillystrings` imports as third-party and sort them incorrectly.
 
-Commit everything to initialise the repo:
+Commit everything to initialize the repo:
 
 ```
 git init && git add . && git commit -m "init"
@@ -1734,7 +1734,7 @@ def foo(x: int | None = None) -> None: ...
 
 # Generator functions — annotate return as Iterator, not Generator
 def scan(data: bytes) -> Iterator[tuple[int, str]]:
-    yield 0, "hello"  # Python recognises this as a generator automatically
+    yield 0, "hello"  # Python recognizes this as a generator automatically
 
 # Prefer collections.abc over typing in Python 3.9+
 from collections.abc import Iterator  # correct for 3.9+
