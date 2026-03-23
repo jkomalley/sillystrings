@@ -70,8 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
             " be found. Possible values for encoding are:"
             " s = single-7-bit-byte characters (default),"
             " S = single-8-bit-byte characters,"
-            " b = 16-bit big-endian, l = 16-bit little-endian,"
-            " B = 32-bit big-endian, L = 32-bit little-endian."
+            " b = 16-bit big-endian, l = 16-bit little-endian."
             " Useful for finding wide character strings. (l and b"
             " apply to, for example, Unicode UTF-16/UCS-2 encodings)."
         ),
