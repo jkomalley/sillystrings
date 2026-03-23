@@ -177,6 +177,14 @@ def test_utf16_single_byte(tmp_path: Path) -> None:
     assert result.stdout == b""
 
 
+@pytest.mark.parametrize("value", ["0", "-1", "-5"])
+def test_invalid_min_length(value: str, tmp_path: Path) -> None:
+    f = tmp_path / "t.bin"
+    f.write_bytes(b"\x00hello\x00")
+    result = run("-n", value, str(f))
+    assert result.returncode != 0
+
+
 def test_prefix_with_offset(tmp_path: Path) -> None:
     f = tmp_path / "t.bin"
     f.write_bytes(b"\x00hello\x00")

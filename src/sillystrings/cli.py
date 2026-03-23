@@ -8,6 +8,13 @@ from sillystrings.__version__ import __version__
 from sillystrings.scanner import scan
 
 
+def positive_int(value: str) -> int:
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"{value} is not a positive integer")
+    return n
+
+
 @dataclass
 class Source:
     name: str
@@ -37,14 +44,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--bytes",
         metavar="NUM",
         dest="min_length",
-        type=int,
+        type=positive_int,
         default=4,
         help=(
             "Print sequences of displayable characters that are at least"
             " min-len characters long. If not specified a default minimum"
             " length of 4 is used. The distinction between displayable"
             " and non-displayable characters depends upon the setting of"
-            " the -e and -U options. Sequences are always terminated at"
+            " the -e option. Sequences are always terminated at"
             " control characters such as new-line and carriage-return,"
             " but not the tab character."
         ),
