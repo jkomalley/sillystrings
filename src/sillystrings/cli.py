@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="sillystrings",
-        description="sillystrings - find the printable strings in a object, or other binary, file",
+        description="sillystrings - find the printable strings in an object, or other binary, file",
     )
     parser.add_argument(
         "files",
