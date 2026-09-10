@@ -48,6 +48,11 @@ def run_strings(strings_bin: str, min_length: int) -> str:
 
 
 def main() -> None:
+    """Copy a candidate binary into fixtures/, then record `strings` output.
+
+    Both steps skip any file that already exists, so re-running is cheap and
+    will not churn committed fixtures.
+    """
     FIXTURES.mkdir(exist_ok=True)
 
     _name, path = find_candidate()

@@ -3,12 +3,25 @@ import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import get_args
 
 from sillystrings.__version__ import __version__
+from sillystrings.encodings import Encoding
 from sillystrings.scanner import scan
 
 
 def positive_int(value: str) -> int:
+    """Parse a string as an integer of at least 1, for use as an argparse type.
+
+    Args:
+        value (str): The raw command-line argument.
+
+    Returns:
+        int: The parsed value.
+
+    Raises:
+        argparse.ArgumentTypeError: If the value is less than 1.
+    """
     n = int(value)
     if n < 1:
         raise argparse.ArgumentTypeError(f"{value} is not a positive integer")
@@ -17,21 +30,25 @@ def positive_int(value: str) -> int:
 
 @dataclass
 class Source:
+    """A named blob of bytes to scan, from a file or from stdin."""
+
     name: str
     data: bytes
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """
-    Build the argument parser for the sillystrings command-line interface.
+    """Build the argument parser for the sillystrings command-line interface.
 
     Returns:
-        An instance of argparse.ArgumentParser configured with the appropriate arguments and options
-        for the sillystrings CLI
+        An instance of argparse.ArgumentParser configured with the appropriate
+        arguments and options for the sillystrings CLI
     """
     parser = argparse.ArgumentParser(
         prog="sillystrings",
-        description="sillystrings - find the printable strings in an object, or other binary, file",
+        description=(
+            "sillystrings - find the printable strings in an object,"
+            " or other binary, file"
+        ),
     )
     parser.add_argument(
         "files",
@@ -70,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-e",
         "--encoding",
-        choices=("s", "S", "l", "b"),
+        choices=get_args(Encoding),
         default="s",
         help=(
             "Select the character encoding of the strings that are to"
@@ -111,6 +128,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def format_offset(offset: int, radix: str | None) -> str:
+    """Format a byte offset for display in the requested radix.
+
+    Args:
+        offset (int): The byte offset of the string.
+        radix (str | None): 'd' for decimal, 'o' for octal, 'x' for hex, or
+            None to omit the offset.
+
+    Returns:
+        str: The padded offset followed by a space, or an empty string when
+            no radix was requested.
+    """
     match radix:
         case "d":
             return f"{offset:7d} "
@@ -123,6 +151,7 @@ def format_offset(offset: int, radix: str | None) -> str:
 
 
 def main() -> None:
+    """Run the sillystrings command-line interface."""
     args: argparse.Namespace = build_parser().parse_args()
 
     sources: list[Source] = []

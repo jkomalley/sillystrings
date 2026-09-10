@@ -2,42 +2,58 @@
 from collections.abc import Iterator
 from typing import Literal
 
-from sillystrings.encodings import iter_chars
+from sillystrings.encodings import (
+    ASCII_ENCODINGS,
+    UTF16_ENCODINGS,
+    Encoding,
+    iter_chars,
+    unsupported_encoding,
+)
 
 
 def scan(
     data: bytes | memoryview,
     *,
     min_length: int = 4,
-    encoding: Literal["s", "S", "l", "b"] = "s",
+    encoding: Encoding = "s",
     include_whitespace: bool = False,
 ) -> Iterator[tuple[int, str]]:
-    """
-    Scan a byte sequence for printable strings based on the specified encoding.
+    """Scan a byte sequence for printable strings based on the specified encoding.
 
     Args:
         data (bytes | memoryview): The byte sequence to scan.
         min_length (int): The minimum length of strings to yield. Default is 4.
-        encoding (Literal["s", "S", "l", "b"]): The encoding to use for scanning. Default is 's'.
+        encoding (Encoding): The encoding to use for scanning. Default is 's'.
             - 's' for 7-bit ASCII
             - 'S' for 8-bit extended ASCII
             - 'l' for UTF-16 little-endian
             - 'b' for UTF-16 big-endian
-            Default is 's'
-        include_whitespace (bool): Whether to include whitespace characters as part of the strings.
-            Default is False.
+        include_whitespace (bool): Whether to include whitespace characters
+            as part of the strings. Default is False.
 
     Yields:
-        tuple[int, str]: The byte offset of the string's first byte, and the string itself.
+        tuple[int, str]: The byte offset of the string's first byte, and the
+            string itself.
+
+    Raises:
+        ValueError: If the encoding is not an Encoding member.
     """
-    if encoding in ("s", "S"):
+    if encoding in ASCII_ENCODINGS:
         yield from _scan_ascii(
-            data, min_length=min_length, encoding=encoding, include_whitespace=include_whitespace
+            data,
+            min_length=min_length,
+            encoding=encoding,
+            include_whitespace=include_whitespace,
         )
-    elif encoding in ("l", "b"):
+    elif encoding in UTF16_ENCODINGS:
         yield from _scan_utf16(
-            data, min_length=min_length, encoding=encoding, include_whitespace=include_whitespace
+            data,
+            min_length=min_length,
+            encoding=encoding,
+            include_whitespace=include_whitespace,
         )
+    else:
+        raise unsupported_encoding(encoding)
 
 
 def _scan_ascii(
@@ -51,7 +67,7 @@ def _scan_ascii(
     acc = bytearray()
     acc_start = 0
 
-    for offset, printable in iter_chars(data, encoding, include_whitespace):
+    for offset, printable in iter_chars(data, encoding, include_ws=include_whitespace):
         if printable:
             if not acc:
                 acc_start = offset
@@ -75,7 +91,7 @@ def _scan_utf16(
     acc: list[str] = []
     acc_start = 0
 
-    for offset, printable in iter_chars(data, encoding, include_whitespace):
+    for offset, printable in iter_chars(data, encoding, include_ws=include_whitespace):
         if printable:
             if not acc:
                 acc_start = offset
