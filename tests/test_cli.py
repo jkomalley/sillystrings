@@ -1,4 +1,5 @@
 # tests/test_cli.py
+import argparse
 import subprocess
 from io import BytesIO
 from pathlib import Path
@@ -6,12 +7,12 @@ from pathlib import Path
 import pytest
 from pytest_mock import MockerFixture
 
-from sillystrings.cli import build_parser, format_offset, main
+from sillystrings.cli import build_parser, format_offset, main, positive_int
 
 
 def run(*args: str, data: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
     cmd = ["uv", "run", "sillystrings", *args]
-    return subprocess.run(cmd, input=data, capture_output=True)
+    return subprocess.run(cmd, input=data, capture_output=True, check=False)
 
 
 # --- Core tests ---
@@ -234,7 +235,9 @@ Capture = pytest.CaptureFixture[str]
 
 
 class TestMain:
-    def test_file_input(self, tmp_path: Path, mocker: MockerFixture, capsys: Capture) -> None:
+    def test_file_input(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
         f = tmp_path / "t.bin"
         f.write_bytes(b"\x00hello\x00")
         mocker.patch("sys.argv", ["sillystrings", str(f)])
@@ -323,3 +326,9 @@ class TestMain:
         out = capsys.readouterr().out
         # With -w: one string starting at offset 1 (not two separate strings)
         assert "7 world" not in out
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_positive_int_rejects_non_positive(value: str) -> None:
+    with pytest.raises(argparse.ArgumentTypeError):
+        positive_int(value)

@@ -9,9 +9,12 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.6.0",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "pytest-mock>=3.15.1",
+    "ruff>=0.15.10",
+    "ty>=0.0.37",
 ]
 
 [project.scripts]
@@ -21,25 +24,93 @@ sillystrings = "sillystrings.cli:main"
 requires = ["uv_build>=0.12.0,<0.13.0"]
 build-backend = "uv_build"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "--cov=sillystrings --cov-report=term-missing"
-
+# --------------------------------------------------------------------------- #
+# Ruff
+# --------------------------------------------------------------------------- #
 [tool.ruff]
-line-length = 100
 target-version = "py311"
-src = ["src"]
+line-length = 88
 
 [tool.ruff.lint]
-select = [
-    "E",   # pycodestyle errors
-    "F",   # pyflakes
-    "I",   # isort
-    "UP",  # pyupgrade
-    "B",   # flake8-bugbear
-    "SIM", # flake8-simplify
-    "ANN", # annotations
+select = ["ALL"]
+ignore = [
+    # --- Formatting / style clashes ---
+    "D203",   # one-blank-line-before-class (conflicts with D211)
+    "D213",   # multi-line-summary-second-line (conflicts with D212)
+    "D100",   # missing docstring in public module
+    "D104",   # missing docstring in public package
+    "D107",   # missing docstring in __init__ method
+
+    # --- Overly pedantic / noisy ---
+    "COM812", # missing trailing comma (conflicts with formatter)
+    "ISC001", # single-line implicit string concatenation (conflicts with formatter)
+    "FIX002", # line contains TODO
+    "TD002",  # missing author in TODO
+    "TD003",  # missing issue link in TODO
+    "ERA001", # found commented-out code
+    "TRY003", # avoid specifying long messages outside the exception class
+    "EM101",  # exception must not use a string literal
+    "EM102",  # exception must not use an f-string literal
+
+    # --- Pragmatic ignores ---
+    "S101",   # use of assert (needed in tests, fine in internal code)
+    "PLR2004",# magic value used in comparison
+    "CPY001", # missing copyright notice
 ]
 
-[tool.ruff.format]
-quote-style = "double"
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "D",      # no docstring requirements in tests
+    "ANN",    # no type annotation requirements in tests
+    "SLF001", # allow access to private members in tests
+    "INP001", # tests/ is a pytest rootdir-based test suite, not an importable package
+    "FBT001", # parametrized test signatures take booleans positionally
+]
+"src/sillystrings/cli.py" = [
+    "T201",   # print() is the primary output mechanism for CLI
+]
+"tests/test_cli.py" = [
+    "S603",   # subprocess with a fixed, hardcoded argv -- not untrusted input
+]
+"scripts/**/*.py" = [
+    "T201",   # print() is how a developer script reports progress
+    "S603",   # subprocess with a fixed, hardcoded argv -- not untrusted input
+]
+
+# --------------------------------------------------------------------------- #
+# ty
+# --------------------------------------------------------------------------- #
+[tool.ty.rules]
+possibly-missing-import = "warn"
+
+# --------------------------------------------------------------------------- #
+# Pytest
+# --------------------------------------------------------------------------- #
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov",
+    "--cov-fail-under=100",
+]
+
+# --------------------------------------------------------------------------- #
+# Coverage
+# --------------------------------------------------------------------------- #
+[tool.coverage.run]
+source = ["sillystrings"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+]
