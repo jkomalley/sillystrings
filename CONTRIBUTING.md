@@ -22,12 +22,8 @@ cd sillystrings
 just install               # uv sync + pre-commit install
 ```
 
-Or without `just`:
-
-```bash
-uv sync                    # create the venv and install all dependencies
-uv run pre-commit install  # enable the git hooks
-```
+Installing the hooks is not optional: `ty` and `pytest` run at pre-push, so a
+push from a clone without them will fail checks you never saw locally.
 
 ## Project layout
 
@@ -61,8 +57,8 @@ Or run individual tasks:
 just format     # ruff format
 just lint       # ruff check --fix
 just typecheck  # ty check src/
-just test       # pytest
-just test-cov   # pytest with the 100% coverage gate
+just test       # pytest (the coverage gate applies -- see below)
+just test-cov   # same thing, named for symmetry with the other repos
 just run --help # drive the CLI locally
 ```
 
@@ -89,9 +85,10 @@ you'd rather not install `just`.
   and `tests/test_encodings.py`. Add a row rather than a new test function when
   the case fits the existing table, and keep the comment above the tuple so the
   row stays on one line.
-- Build test inputs with `make_data` from `tests/conftest.py`, which encodes
-  string segments for the target encoding and appends raw `bytes` segments
-  as-is — that is how to construct odd-length or deliberately malformed buffers.
+- Build test inputs with `make_data` from `tests/conftest.py`: string segments
+  are encoded for the target encoding, `int` segments become that many NUL
+  characters, and `bytes` segments are appended raw — which is how to construct
+  odd-length or deliberately malformed buffers.
 - CLI tests come in two layers: subprocess smoke tests through the `run` helper,
   which confirm the installed entry point works, and in-process tests that call
   `cli.py` directly. Only the second layer is visible to coverage, so a new
@@ -111,9 +108,14 @@ you'd rather not install `just`.
 - Make sure `just check` passes cleanly before you open the PR.
 - **PRs are merged with a merge commit** — not squashed, not rebased.
 
-CI runs the full check suite against Python 3.11–3.14 on every pull request.
+CI will run the full check suite against Python 3.11–3.14 on every pull
+request once #22 lands; until then, `just check` locally is the only gate.
 
 ## Releasing
+
+> **Not live yet.** CI, the `version-guard` job and the release pipeline land in
+> #22 and #27. Until they do, nothing below runs — and `git describe --tags`
+> has no tag to find. This section describes the target state.
 
 Releases are published to PyPI automatically: the CD workflow fires when CI
 passes on `main` and publishes whenever `pyproject.toml`'s version isn't already
@@ -144,7 +146,8 @@ never satisfy required status checks.
 
 Open the bump as its own `chore: release vX.Y.Z` PR that also renames
 `## [Unreleased]` to `## [X.Y.Z] - <date>` in `CHANGELOG.md`, adds a fresh empty
-`## [Unreleased]`, and updates the compare links at the bottom. The release
+`## [Unreleased]`, and adds the compare links at the bottom (the first
+release creates them; there is no tag to compare against yet). The release
 notes are extracted from that section, and the release fails if it is missing.
 
 The `version-guard` CI job enforces the bump size: it fails any release PR whose
