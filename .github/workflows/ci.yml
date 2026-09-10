@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Lint
+        run: uv run ruff check src/ tests/
+
+      - name: Type check
+        if: matrix.python-version == '3.14'
+        run: uv run ty check src/
+
+      - name: Test
+        run: uv run pytest
+
+  # Guards against mis-numbered releases: if a PR bumps the version, the bump
+  # must be large enough for the conventional-commit types merged since the last
+  # release tag (a feat -> minor, a breaking change -> major). Non-release PRs
+  # (no version change) pass trivially.
+  version-guard:
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0  # full history + tags are needed to compare against the last release
+
+      - name: Verify version bump matches changes since last release
+        run: |
+          python3 - <<'PY'
+          import re
+          import subprocess
+          import sys
+          import tomllib
+
+
+          def git(*args: str) -> str:
+              return subprocess.run(
+                  ["git", *args], capture_output=True, text=True, check=True
+              ).stdout.strip()
+
+
+          with open("pyproject.toml", "rb") as fh:
+              version = tomllib.load(fh)["project"]["version"]
+          cur = tuple(int(p) for p in version.split("."))
+
+          tags = git("tag", "--list", "v[0-9]*", "--sort=-v:refname").split()
+          if not tags:
+              print("No release tag yet; nothing to compare against.")
+              sys.exit(0)
+          last = tags[0]
+          prev = tuple(int(p) for p in last.lstrip("v").split("."))
+
+          if cur == prev:
+              print(f"Version still {version} (== {last}); not a release PR. OK.")
+              sys.exit(0)
+
+          log = git("log", f"{last}..HEAD", "--format=%s%n%b")
+          breaking = bool(re.search(r"(?m)^\w+(\([^)]*\))?!:", log)) or (
+              "BREAKING CHANGE" in log
+          )
+          feat = bool(re.search(r"(?m)^feat(\([^)]*\))?!?:", log))
+
+          # In 0.x, a breaking change is a minor bump by convention, not a major one.
+          if breaking and prev[0] > 0:
+              required = "major"
+          elif breaking or feat:
+              required = "minor"
+          else:
+              required = "patch"
+
+          if cur[0] != prev[0]:
+              actual = "major"
+          elif cur[1] != prev[1]:
+              actual = "minor"
+          else:
+              actual = "patch"
+
+          rank = {"patch": 0, "minor": 1, "major": 2}
+          if rank[actual] < rank[required]:
+              print(
+                  f"::error::{version} is a {actual} bump over {last}, but commits "
+                  f"since {last} require a {required} bump. "
+                  f"Run 'uv version --bump {required}'."
+              )
+              sys.exit(1)
+          print(f"OK: {actual} bump for {version} satisfies the required {required}.")
+          PY
