@@ -10,7 +10,7 @@ from .conftest import make_data
 
 class TestScanner:
     @pytest.mark.parametrize(
-        "segments, encoding, min_length, include_whitespace, expected",
+        ("segments", "encoding", "min_length", "include_whitespace", "expected"),
         [
             # -----------------------------------------------------------------------
             # empty input
@@ -93,7 +93,13 @@ class TestScanner:
             # basic extraction — pure ASCII still works
             ([1, "hello", 1], "S", 4, False, [(1, "hello")]),
             # high bytes are printable — use bytes segment
-            ([b"\x80\x81\x82\x83"], "S", 4, False, [(0, b"\x80\x81\x82\x83".decode("latin-1"))]),
+            (
+                [b"\x80\x81\x82\x83\x84"],
+                "S",
+                4,
+                False,
+                [(0, b"\x80\x81\x82\x83\x84".decode("latin-1"))],
+            ),
             # mix of ASCII and high bytes in one run
             ([b"hel\x80\x81"], "S", 4, False, [(0, b"hel\x80\x81".decode("latin-1"))]),
             # DEL (0x7F) still excluded — breaks run between ASCII chars
@@ -101,7 +107,13 @@ class TestScanner:
             # high bytes too short
             ([b"\x80\x81\x82"], "S", 4, False, []),
             # high bytes exact min_length
-            ([b"\x80\x81\x82\x83"], "S", 4, False, [(0, b"\x80\x81\x82\x83".decode("latin-1"))]),
+            (
+                [b"\x80\x81\x82\x83"],
+                "S",
+                4,
+                False,
+                [(0, b"\x80\x81\x82\x83".decode("latin-1"))],
+            ),
             # tab extends run in S mode with include_ws
             ([b"hel\x09lo"], "S", 4, True, [(0, b"hel\x09lo".decode("latin-1"))]),
             # -----------------------------------------------------------------------
@@ -140,8 +152,13 @@ class TestScanner:
             # tab between two strings — splits them
             (["hello\tworld"], "l", 4, False, [(0, "hello"), (12, "world")]),
             # odd trailing byte — silently ignored, string still extracted
-            (["hello"], "l", 4, False, [(0, "hello")]),  # make_data won't add odd bytes,
-            # test odd bytes separately with raw bytes
+            (
+                [b"h\x00e\x00l\x00l\x00o\x00\x41"],
+                "l",
+                4,
+                False,
+                [(0, "hello")],
+            ),
             # -----------------------------------------------------------------------
             # encoding='b' — UTF-16 big-endian
             # -----------------------------------------------------------------------
