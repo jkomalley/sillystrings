@@ -152,13 +152,7 @@ class TestScanner:
             # tab between two strings — splits them
             (["hello\tworld"], "l", 4, False, [(0, "hello"), (12, "world")]),
             # odd trailing byte — silently ignored, string still extracted
-            (
-                [b"h\x00e\x00l\x00l\x00o\x00\x41"],
-                "l",
-                4,
-                False,
-                [(0, "hello")],
-            ),
+            (["hello", b"\x41"], "l", 4, False, [(0, "hello")]),
             # -----------------------------------------------------------------------
             # encoding='b' — UTF-16 big-endian
             # -----------------------------------------------------------------------

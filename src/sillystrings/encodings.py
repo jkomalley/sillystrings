@@ -2,6 +2,24 @@
 from collections.abc import Iterator
 from typing import Literal
 
+Encoding = Literal["s", "S", "l", "b"]
+"""The encodings sillystrings can scan for, in `strings`' own -e vocabulary."""
+
+ASCII_ENCODINGS = ("s", "S")
+UTF16_ENCODINGS = ("l", "b")
+
+
+def unsupported_encoding(encoding: str) -> ValueError:
+    """Build the error for an encoding outside the supported vocabulary.
+
+    Args:
+        encoding (str): The rejected encoding.
+
+    Returns:
+        ValueError: The error to raise.
+    """
+    return ValueError(f"unsupported encoding: {encoding}")
+
 
 def is_printable_ascii(
     byte: int, encoding: str = "s", *, include_ws: bool = False
@@ -60,16 +78,16 @@ def iter_chars(
             indicating if it's printable.
 
     Raises:
-        ValueError: If the encoding is not one of 's', 'S', 'l' or 'b'.
+        ValueError: If the encoding is not an Encoding member.
     """
-    if encoding in ("s", "S"):
+    if encoding in ASCII_ENCODINGS:
         for i, byte in enumerate(data):
             yield i, is_printable_ascii(byte, encoding, include_ws=include_ws)
-    elif encoding in ("l", "b"):
+    elif encoding in UTF16_ENCODINGS:
         byteorder: Literal["little", "big"] = "little" if encoding == "l" else "big"
         for i in range(0, len(data) - 1, 2):
             char_bytes: bytes | memoryview = data[i : i + 2]
             char_value: int = int.from_bytes(bytes=char_bytes, byteorder=byteorder)
             yield i, is_printable_utf16(char_value, include_ws=include_ws)
     else:
-        raise ValueError(f"unsupported encoding: {encoding}")
+        raise unsupported_encoding(encoding)
