@@ -83,3 +83,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, project layout, an
 ## License
 
 MIT
+
+<!-- protection verification, do not merge -->
