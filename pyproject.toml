@@ -75,6 +75,10 @@ convention = "google"
 "tests/test_cli.py" = [
     "S603",   # subprocess with a fixed, hardcoded argv -- not untrusted input
 ]
+"scripts/**/*.py" = [
+    "T201",   # print() is how a developer script reports progress
+    "S603",   # subprocess with a fixed, hardcoded argv -- not untrusted input
+]
 
 # --------------------------------------------------------------------------- #
 # ty
