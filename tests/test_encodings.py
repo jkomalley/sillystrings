@@ -33,12 +33,8 @@ class TestIsPrintableAscii:
             (0x09, "s", True, True),  # \t — now included
             (0x0A, "s", True, True),  # \n — now included
             (0x0D, "s", True, True),  # \r — now included
-            (
-                0x0B,
-                "s",
-                True,
-                False,
-            ),  # \v — not in the whitespace set {0x09, 0x0A, 0x0D}
+            # \v — not in the whitespace set {0x09, 0x0A, 0x0D}
+            (0x0B, "s", True, False),
             (0x0C, "s", True, False),  # \f — not in the whitespace set
             (0x08, "s", True, False),  # backspace — not in the whitespace set
             (0x1F, "s", True, False),  # still below range and not a ws char
@@ -63,12 +59,8 @@ class TestIsPrintableAscii:
             (0x0A, "S", True, True),  # \n — included
             (0x0D, "S", True, True),  # \r — included
             (0x0B, "S", True, False),  # \v — not in the whitespace set
-            (
-                0x7F,
-                "S",
-                True,
-                False,
-            ),  # DEL — still excluded even with include_ws and 'S'
+            # DEL — still excluded even with include_ws and 'S'
+            (0x7F, "S", True, False),
             (0x80, "S", True, True),  # high byte still printable
             # --- encoding='l' (UTF-16 LE) — always False, handled by iter_chars ---
             (0x41, "l", False, False),  # 'A' — not handled by is_printable
@@ -121,11 +113,8 @@ class TestIsPrintableUtf16:
             (0x0009, True, True),  # \t — included
             (0x000A, True, True),  # \n — included
             (0x000D, True, True),  # \r — included
-            (
-                0x000B,
-                True,
-                False,
-            ),  # \v — not in whitespace set {0x0009, 0x000A, 0x000D}
+            # \v — not in whitespace set {0x0009, 0x000A, 0x000D}
+            (0x000B, True, False),
             (0x000C, True, False),  # \f — not in whitespace set
             (0x0008, True, False),  # backspace — not in whitespace set
             (0x001F, True, False),  # below range and not a ws char
@@ -177,12 +166,8 @@ class TestIterChars:
             ),
             # --- encoding='s', include_ws=True ---
             (b"\x09\x0a\x0d", "s", True, [(0, True), (1, True), (2, True)]),  # \t \n \r
-            (
-                b"\x09\x0a\x0d",
-                "s",
-                False,
-                [(0, False), (1, False), (2, False)],
-            ),  # same, flag off
+            # same, flag off
+            (b"\x09\x0a\x0d", "s", False, [(0, False), (1, False), (2, False)]),
             (b"\x0b\x0c", "s", True, [(0, False), (1, False)]),  # \v \f — not in ws set
             (b"\x09\x41", "s", True, [(0, True), (1, True)]),  # ws char then printable
             # --- encoding='S', include_ws=False ---
@@ -199,12 +184,8 @@ class TestIterChars:
                 [(0, False), (1, True), (2, True), (3, False), (4, True), (5, True)],
             ),
             # --- encoding='S', include_ws=True ---
-            (
-                b"\x09\x80",
-                "S",
-                True,
-                [(0, True), (1, True)],
-            ),  # ws + high byte both printable
+            # ws + high byte both printable
+            (b"\x09\x80", "S", True, [(0, True), (1, True)]),
             (b"\x09\x80", "S", False, [(0, False), (1, True)]),  # same, flag off
             # --- encoding='l' (UTF-16 LE), include_ws=False ---
             (b"", "l", False, []),

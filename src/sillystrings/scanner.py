@@ -2,14 +2,20 @@
 from collections.abc import Iterator
 from typing import Literal
 
-from sillystrings.encodings import iter_chars
+from sillystrings.encodings import (
+    ASCII_ENCODINGS,
+    UTF16_ENCODINGS,
+    Encoding,
+    iter_chars,
+    unsupported_encoding,
+)
 
 
 def scan(
     data: bytes | memoryview,
     *,
     min_length: int = 4,
-    encoding: Literal["s", "S", "l", "b"] = "s",
+    encoding: Encoding = "s",
     include_whitespace: bool = False,
 ) -> Iterator[tuple[int, str]]:
     """Scan a byte sequence for printable strings based on the specified encoding.
@@ -17,8 +23,7 @@ def scan(
     Args:
         data (bytes | memoryview): The byte sequence to scan.
         min_length (int): The minimum length of strings to yield. Default is 4.
-        encoding (Literal["s", "S", "l", "b"]): The encoding to use for
-            scanning. Default is 's'.
+        encoding (Encoding): The encoding to use for scanning. Default is 's'.
             - 's' for 7-bit ASCII
             - 'S' for 8-bit extended ASCII
             - 'l' for UTF-16 little-endian
@@ -31,16 +36,16 @@ def scan(
             string itself.
 
     Raises:
-        ValueError: If the encoding is not one of 's', 'S', 'l' or 'b'.
+        ValueError: If the encoding is not an Encoding member.
     """
-    if encoding in ("s", "S"):
+    if encoding in ASCII_ENCODINGS:
         yield from _scan_ascii(
             data,
             min_length=min_length,
             encoding=encoding,
             include_whitespace=include_whitespace,
         )
-    elif encoding in ("l", "b"):
+    elif encoding in UTF16_ENCODINGS:
         yield from _scan_utf16(
             data,
             min_length=min_length,
@@ -48,7 +53,7 @@ def scan(
             include_whitespace=include_whitespace,
         )
     else:
-        raise ValueError(f"unsupported encoding: {encoding}")
+        raise unsupported_encoding(encoding)
 
 
 def _scan_ascii(

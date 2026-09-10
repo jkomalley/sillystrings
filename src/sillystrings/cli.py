@@ -3,8 +3,10 @@ import argparse
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import get_args
 
 from sillystrings.__version__ import __version__
+from sillystrings.encodings import Encoding
 from sillystrings.scanner import scan
 
 
@@ -28,12 +30,7 @@ def positive_int(value: str) -> int:
 
 @dataclass
 class Source:
-    """A named blob of bytes to scan, from a file or from stdin.
-
-    Attributes:
-        name (str): The display name, either a path or "<stdin>".
-        data (bytes): The bytes to scan.
-    """
+    """A named blob of bytes to scan, from a file or from stdin."""
 
     name: str
     data: bytes
@@ -90,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-e",
         "--encoding",
-        choices=("s", "S", "l", "b"),
+        choices=get_args(Encoding),
         default="s",
         help=(
             "Select the character encoding of the strings that are to"

@@ -67,7 +67,7 @@ convention = "google"
     "ANN",    # no type annotation requirements in tests
     "SLF001", # allow access to private members in tests
     "INP001", # tests/ is a pytest rootdir-based test suite, not an importable package
-    "FBT",    # parametrized test signatures take booleans positionally
+    "FBT001", # parametrized test signatures take booleans positionally
 ]
 "src/sillystrings/cli.py" = [
     "T201",   # print() is the primary output mechanism for CLI
