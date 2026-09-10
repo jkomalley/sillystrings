@@ -72,11 +72,13 @@ The project is organized into three layers:
 ## Development
 
 ```
-uv sync
-uv run pytest
+just install    # or: uv sync && uv run pre-commit install
+just check      # format, lint, type check, and the test suite
 ```
 
 Tests cover all encoding modes, offset calculations, CLI flags, edge cases, and integration via subprocess.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, project layout, and the conventions this repo follows.
 
 ## License
 
