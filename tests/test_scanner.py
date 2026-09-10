@@ -214,3 +214,8 @@ class TestScanner:
             )
         )
         assert result == expected
+
+    def test_scan_rejects_unknown_encoding(self) -> None:
+        # scan is a generator, so the error only surfaces on consumption
+        with pytest.raises(ValueError, match="unsupported encoding: z"):
+            list(scan(b"hello", encoding="z"))  # ty: ignore[invalid-argument-type]

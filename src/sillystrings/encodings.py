@@ -58,6 +58,9 @@ def iter_chars(
     Yields:
         tuple[int, bool]: Tuple containing the byte offset and a bool
             indicating if it's printable.
+
+    Raises:
+        ValueError: If the encoding is not one of 's', 'S', 'l' or 'b'.
     """
     if encoding in ("s", "S"):
         for i, byte in enumerate(data):
@@ -68,3 +71,5 @@ def iter_chars(
             char_bytes: bytes | memoryview = data[i : i + 2]
             char_value: int = int.from_bytes(bytes=char_bytes, byteorder=byteorder)
             yield i, is_printable_utf16(char_value, include_ws=include_ws)
+    else:
+        raise ValueError(f"unsupported encoding: {encoding}")

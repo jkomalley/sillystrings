@@ -29,6 +29,9 @@ def scan(
     Yields:
         tuple[int, str]: The byte offset of the string's first byte, and the
             string itself.
+
+    Raises:
+        ValueError: If the encoding is not one of 's', 'S', 'l' or 'b'.
     """
     if encoding in ("s", "S"):
         yield from _scan_ascii(
@@ -44,6 +47,8 @@ def scan(
             encoding=encoding,
             include_whitespace=include_whitespace,
         )
+    else:
+        raise ValueError(f"unsupported encoding: {encoding}")
 
 
 def _scan_ascii(

@@ -253,3 +253,8 @@ class TestIterChars:
     ) -> None:
         result = list(encodings.iter_chars(data, encoding, include_ws=include_ws))
         assert result == expected
+
+    def test_iter_chars_rejects_unknown_encoding(self) -> None:
+        # iter_chars is a generator, so the error only surfaces on consumption
+        with pytest.raises(ValueError, match="unsupported encoding: z"):
+            list(encodings.iter_chars(b"hello", "z"))
