@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Install deps:** `just install` (`uv sync` + `uv run pre-commit install`)
 - **Run the CLI locally:** `just run --help` (`uv run sillystrings --help`)
 - **Run tests:** `just test` (`uv run pytest`)
-- **Run single test:** `uv run pytest tests/test_scanner.py::TestScanner::test_scan -v`
+- **Run single test:** `uv run pytest --no-cov tests/test_scanner.py::TestScanner::test_scan -v` (`--no-cov` is required — the coverage gate in `addopts` fails any partial run)
 - **Test with coverage (100% gate):** `just test-cov` (`uv run pytest --cov --cov-fail-under=100`)
 - **Format:** `just format` (`uv run ruff format src/ tests/`)
 - **Format check:** `just format-check` (`uv run ruff format --check src/ tests/`)
