@@ -11,7 +11,7 @@ from sillystrings.cli import build_parser, format_offset, main
 
 def run(*args: str, data: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
     cmd = ["uv", "run", "sillystrings", *args]
-    return subprocess.run(cmd, input=data, capture_output=True)
+    return subprocess.run(cmd, input=data, capture_output=True, check=False)
 
 
 # --- Core tests ---
@@ -234,7 +234,9 @@ Capture = pytest.CaptureFixture[str]
 
 
 class TestMain:
-    def test_file_input(self, tmp_path: Path, mocker: MockerFixture, capsys: Capture) -> None:
+    def test_file_input(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
         f = tmp_path / "t.bin"
         f.write_bytes(b"\x00hello\x00")
         mocker.patch("sys.argv", ["sillystrings", str(f)])

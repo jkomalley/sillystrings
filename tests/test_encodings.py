@@ -1,12 +1,12 @@
 # tests/test_encodings.py
 import pytest
 
-import sillystrings.encodings as encodings
+from sillystrings import encodings
 
 
 class TestIsPrintableAscii:
     @pytest.mark.parametrize(
-        "input_byte, encoding, include_ws, expected",
+        ("input_byte", "encoding", "include_ws", "expected"),
         [
             # --- encoding='s', include_ws=False ---
             # below range
@@ -33,7 +33,12 @@ class TestIsPrintableAscii:
             (0x09, "s", True, True),  # \t — now included
             (0x0A, "s", True, True),  # \n — now included
             (0x0D, "s", True, True),  # \r — now included
-            (0x0B, "s", True, False),  # \v — not in the whitespace set {0x09, 0x0A, 0x0D}
+            (
+                0x0B,
+                "s",
+                True,
+                False,
+            ),  # \v — not in the whitespace set {0x09, 0x0A, 0x0D}
             (0x0C, "s", True, False),  # \f — not in the whitespace set
             (0x08, "s", True, False),  # backspace — not in the whitespace set
             (0x1F, "s", True, False),  # still below range and not a ws char
@@ -58,7 +63,12 @@ class TestIsPrintableAscii:
             (0x0A, "S", True, True),  # \n — included
             (0x0D, "S", True, True),  # \r — included
             (0x0B, "S", True, False),  # \v — not in the whitespace set
-            (0x7F, "S", True, False),  # DEL — still excluded even with include_ws and 'S'
+            (
+                0x7F,
+                "S",
+                True,
+                False,
+            ),  # DEL — still excluded even with include_ws and 'S'
             (0x80, "S", True, True),  # high byte still printable
             # --- encoding='l' (UTF-16 LE) — always False, handled by iter_chars ---
             (0x41, "l", False, False),  # 'A' — not handled by is_printable
@@ -73,12 +83,15 @@ class TestIsPrintableAscii:
     def test_is_printable_ascii(
         self, input_byte: int, encoding: str, include_ws: bool, expected: bool
     ) -> None:
-        assert encodings.is_printable_ascii(input_byte, encoding, include_ws) == expected
+        assert (
+            encodings.is_printable_ascii(input_byte, encoding, include_ws=include_ws)
+            == expected
+        )
 
 
 class TestIsPrintableUtf16:
     @pytest.mark.parametrize(
-        "value, include_ws, expected",
+        ("value", "include_ws", "expected"),
         [
             # --- include_ws=False ---
             # below range
@@ -108,7 +121,11 @@ class TestIsPrintableUtf16:
             (0x0009, True, True),  # \t — included
             (0x000A, True, True),  # \n — included
             (0x000D, True, True),  # \r — included
-            (0x000B, True, False),  # \v — not in whitespace set {0x0009, 0x000A, 0x000D}
+            (
+                0x000B,
+                True,
+                False,
+            ),  # \v — not in whitespace set {0x0009, 0x000A, 0x000D}
             (0x000C, True, False),  # \f — not in whitespace set
             (0x0008, True, False),  # backspace — not in whitespace set
             (0x001F, True, False),  # below range and not a ws char
@@ -119,13 +136,15 @@ class TestIsPrintableUtf16:
             (0xFFFF, True, False),  # max 16-bit — still excluded
         ],
     )
-    def test_is_printable_utf16(self, value: int, include_ws: bool, expected: bool) -> None:
-        assert encodings.is_printable_utf16(value, include_ws) == expected
+    def test_is_printable_utf16(
+        self, value: int, include_ws: bool, expected: bool
+    ) -> None:
+        assert encodings.is_printable_utf16(value, include_ws=include_ws) == expected
 
 
 class TestIterChars:
     @pytest.mark.parametrize(
-        "data, encoding, include_ws, expected",
+        ("data", "encoding", "include_ws", "expected"),
         [
             # --- encoding='s', include_ws=False ---
             # empty input
@@ -135,7 +154,12 @@ class TestIterChars:
             # single non-printable byte
             (b"\x00", "s", False, [(0, False)]),
             # boundaries
-            (b"\x1f\x20\x7e\x7f", "s", False, [(0, False), (1, True), (2, True), (3, False)]),
+            (
+                b"\x1f\x20\x7e\x7f",
+                "s",
+                False,
+                [(0, False), (1, True), (2, True), (3, False)],
+            ),
             # mixed printable and non-printable
             (b"\x00\x41\x00", "s", False, [(0, False), (1, True), (2, False)]),
             # all printable
@@ -145,10 +169,20 @@ class TestIterChars:
             # high bytes excluded in 's' mode
             (b"\x7f\x80\xff", "s", False, [(0, False), (1, False), (2, False)]),
             # offsets are correct across longer input
-            (b"\x00\x00\x00\x41", "s", False, [(0, False), (1, False), (2, False), (3, True)]),
+            (
+                b"\x00\x00\x00\x41",
+                "s",
+                False,
+                [(0, False), (1, False), (2, False), (3, True)],
+            ),
             # --- encoding='s', include_ws=True ---
             (b"\x09\x0a\x0d", "s", True, [(0, True), (1, True), (2, True)]),  # \t \n \r
-            (b"\x09\x0a\x0d", "s", False, [(0, False), (1, False), (2, False)]),  # same, flag off
+            (
+                b"\x09\x0a\x0d",
+                "s",
+                False,
+                [(0, False), (1, False), (2, False)],
+            ),  # same, flag off
             (b"\x0b\x0c", "s", True, [(0, False), (1, False)]),  # \v \f — not in ws set
             (b"\x09\x41", "s", True, [(0, True), (1, True)]),  # ws char then printable
             # --- encoding='S', include_ws=False ---
@@ -165,7 +199,12 @@ class TestIterChars:
                 [(0, False), (1, True), (2, True), (3, False), (4, True), (5, True)],
             ),
             # --- encoding='S', include_ws=True ---
-            (b"\x09\x80", "S", True, [(0, True), (1, True)]),  # ws + high byte both printable
+            (
+                b"\x09\x80",
+                "S",
+                True,
+                [(0, True), (1, True)],
+            ),  # ws + high byte both printable
             (b"\x09\x80", "S", False, [(0, False), (1, True)]),  # same, flag off
             # --- encoding='l' (UTF-16 LE), include_ws=False ---
             (b"", "l", False, []),
@@ -212,5 +251,5 @@ class TestIterChars:
         include_ws: bool,
         expected: list[tuple[int, bool]],
     ) -> None:
-        result = list(encodings.iter_chars(data, encoding, include_ws))
+        result = list(encodings.iter_chars(data, encoding, include_ws=include_ws))
         assert result == expected
