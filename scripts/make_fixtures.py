@@ -48,6 +48,7 @@ def run_strings(strings_bin: str, min_length: int) -> str:
 
 
 def main() -> None:
+    """Generate the binary and the expected `strings` output for each length."""
     FIXTURES.mkdir(exist_ok=True)
 
     _name, path = find_candidate()
