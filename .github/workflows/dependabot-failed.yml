@@ -1,0 +1,54 @@
+name: Dependabot failure alert
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  alert:
+    if: >
+      github.event.workflow_run.conclusion == 'failure' &&
+      startsWith(github.event.workflow_run.head_branch, 'dependabot/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open an assigned issue for the failing bump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+
+          PR=$(gh pr list --repo "$REPO" --head "$BRANCH" --state open \
+                 --json number --jq '.[0].number // empty')
+          if [ -z "$PR" ]; then
+            echo "No open PR for branch $BRANCH; nothing to report."
+            exit 0
+          fi
+
+          TITLE="CI failed on Dependabot PR #${PR}"
+
+          EXISTING=$(gh issue list --repo "$REPO" --state open --limit 100 \
+                       --json number,title \
+                     | jq -r --arg t "$TITLE" 'map(select(.title == $t)) | .[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "Issue #$EXISTING is already open for PR #$PR; not duplicating."
+            exit 0
+          fi
+
+          gh issue create --repo "$REPO" \
+            --title "$TITLE" \
+            --assignee jkomalley \
+            --body "CI failed on #${PR}, so auto-merge did not proceed.
+
+          Failing run: https://github.com/${REPO}/actions/runs/${RUN_ID}
+          Branch: \`${BRANCH}\`
+
+          This bump needs a look. Close this issue once the PR is merged or closed."
