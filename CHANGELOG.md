@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Piping output to a command that exits early — `sillystrings big.bin | head`,
+  the tool's most common invocation — no longer prints a `BrokenPipeError`
+  traceback. It now exits quietly with status 1, as coreutils does.
+
 ### Added
 
 - Initial release. Extracts printable character sequences from binary files,
