@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-10
+
 ### Fixed
 
 - Piping output to a command that exits early — `sillystrings big.bin | head`,
@@ -25,3 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   string, and `-f` to print the filename before each match.
 - Reads from stdin when given no file arguments or a `-` argument, and accepts
   multiple files in one invocation.
+
+[Unreleased]: https://github.com/jkomalley/sillystrings/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jkomalley/sillystrings/releases/tag/v0.1.0
