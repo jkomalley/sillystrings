@@ -1,5 +1,7 @@
 # src/sillystrings/cli.py
 import argparse
+import contextlib
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -151,7 +153,27 @@ def format_offset(offset: int, radix: str | None) -> str:
 
 
 def main() -> None:
-    """Run the sillystrings command-line interface."""
+    """Run the sillystrings command-line interface.
+
+    Raises:
+        SystemExit: On a missing file, or when the output pipe closes early.
+    """
+    try:
+        _run()
+    except BrokenPipeError:
+        # A downstream reader went away -- `sillystrings big.bin | head` is the
+        # normal case. Rebind stdout to devnull before exiting: the interpreter
+        # flushes stdout during shutdown, which would raise a second
+        # BrokenPipeError and print "Exception ignored in:" after we are done.
+        # If stdout has no underlying fd (captured or wrapped), there is no
+        # real pipe to protect, so failing to rebind is not an error.
+        with contextlib.suppress(OSError):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(1)
+
+
+def _run() -> None:
+    """Parse arguments, read every source, and print the strings found."""
     args: argparse.Namespace = build_parser().parse_args()
 
     sources: list[Source] = []

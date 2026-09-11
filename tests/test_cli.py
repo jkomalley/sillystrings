@@ -1,6 +1,7 @@
 # tests/test_cli.py
 import argparse
 import subprocess
+import sys
 from io import BytesIO
 from pathlib import Path
 
@@ -332,3 +333,35 @@ class TestMain:
 def test_positive_int_rejects_non_positive(value: str) -> None:
     with pytest.raises(argparse.ArgumentTypeError):
         positive_int(value)
+
+
+class TestBrokenPipe:
+    def test_main_exits_quietly_when_the_pipe_closes(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # `sillystrings big.bin | head` closes stdout while we are still
+        # writing. Without handling, that surfaces as a BrokenPipeError
+        # traceback -- on the tool's most common invocation.
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"hello world\x00second string here\x00")
+        mocker.patch.object(sys, "argv", ["sillystrings", str(f)])
+        mocker.patch("builtins.print", side_effect=BrokenPipeError)
+
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+        # Exits 1 like coreutils rather than surfacing a traceback. Under
+        # capsys stdout has no fileno, so the devnull rebinding is suppressed
+        # -- there is no real pipe to protect in that case.
+        assert exc.value.code == 1
+        assert capsys.readouterr().err == ""
+
+    def test_broken_pipe_on_stderr_path_is_not_swallowed(
+        self, mocker: MockerFixture
+    ) -> None:
+        # A missing file still reports normally; the handler must not turn
+        # every exit into the broken-pipe path.
+        mocker.patch.object(sys, "argv", ["sillystrings", "/nonexistent/file.bin"])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1
