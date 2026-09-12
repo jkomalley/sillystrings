@@ -7,11 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- Piping output to a command that exits early — `sillystrings big.bin | head`,
-  the tool's most common invocation — no longer prints a `BrokenPipeError`
-  traceback. It now exits quietly with status 1, as coreutils does.
+## [0.1.0] - 2026-09-11
 
 ### Added
 
@@ -25,3 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   string, and `-f` to print the filename before each match.
 - Reads from stdin when given no file arguments or a `-` argument, and accepts
   multiple files in one invocation.
+- Exits quietly when the output pipe closes early, so `sillystrings big.bin |
+  head` behaves like coreutils rather than printing a `BrokenPipeError`.
+
+[Unreleased]: https://github.com/jkomalley/sillystrings/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/jkomalley/sillystrings/releases/tag/v0.1.0
