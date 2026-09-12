@@ -1,0 +1,95 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  release:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Check version against PyPI
+        id: check
+        run: |
+          VERSION=$(grep -m1 '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          STATUS=$(curl -o /dev/null -s -w "%{http_code}" \
+            "https://pypi.org/pypi/sillystrings/${VERSION}/json")
+          if [ "$STATUS" = "200" ]; then
+            echo "v${VERSION} already on PyPI — nothing to do."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v${VERSION} not yet on PyPI — proceeding."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract release notes from changelog
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          VERSION="${{ steps.check.outputs.version }}"
+          # Release notes are the curated CHANGELOG.md section for this version,
+          # not raw commit/PR titles. Extract the block between the version's
+          # "## [x.y.z]" heading and the next "## [" heading, trimming blank
+          # lines. Runs before the PyPI publish so a missing changelog entry
+          # aborts the whole release instead of shipping empty notes.
+          awk -v ver="$VERSION" '
+            $0 ~ ("^## \\[" ver "\\]") { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { lines[n++] = $0 }
+            END {
+              start = 0
+              while (start < n && lines[start] ~ /^[[:space:]]*$/) start++
+              end = n - 1
+              while (end >= start && lines[end] ~ /^[[:space:]]*$/) end--
+              for (i = start; i <= end; i++) print lines[i]
+            }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG.md entry for v${VERSION}. Add a '## [${VERSION}]' section before releasing."
+            exit 1
+          fi
+          echo "Release notes for v${VERSION}:"
+          cat release-notes.md
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        if: steps.check.outputs.publish == 'true'
+        with:
+          python-version: "3.14"
+
+      - name: Build
+        if: steps.check.outputs.publish == 'true'
+        run: uv build
+
+      - name: Publish to PyPI
+        if: steps.check.outputs.publish == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Tag and create release
+        if: steps.check.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.check.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin "v${VERSION}"
+          # Publish directly (not a draft): the package is already live on PyPI
+          # by this step, so a draft would gate nothing.
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file release-notes.md \
+            --latest \
+            dist/*
