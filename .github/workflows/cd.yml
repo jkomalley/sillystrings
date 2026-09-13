@@ -63,7 +63,7 @@ jobs:
           echo "Release notes for v${VERSION}:"
           cat release-notes.md
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         if: steps.check.outputs.publish == 'true'
         with:
           python-version: "3.14"
