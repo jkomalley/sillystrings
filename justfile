@@ -1,6 +1,7 @@
 # Justfile for sillystrings project
 
 set shell := ["bash", "-c"]
+set positional-arguments
 
 # Show available recipes
 default:
@@ -13,7 +14,7 @@ install:
 
 # Run the CLI app locally. Usage: just run --help
 run *args:
-    uv run sillystrings {{args}}
+    uv run sillystrings "$@"
 
 # Run tests
 test:
