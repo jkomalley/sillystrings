@@ -1,22 +1,26 @@
 default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        stages: [pre-commit]
       - id: end-of-file-fixer
+        stages: [pre-commit]
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
       - id: check-added-large-files
+        stages: [pre-commit]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.16.8
     hooks:
-      - id: ruff-format
       - id: ruff-check
         args: [--fix]
+      - id: ruff-format
 
   - repo: local
     hooks:

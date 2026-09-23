@@ -57,8 +57,8 @@ Or run individual tasks:
 just format     # ruff format
 just lint       # ruff check --fix
 just typecheck  # ty check src/
-just test       # pytest (the coverage gate applies -- see below)
-just test-cov   # same thing, named for symmetry with the other repos
+just test       # pytest without the coverage gate, for quick iteration
+just test-cov   # pytest with the 100% coverage gate
 just run --help # drive the CLI locally
 ```
 
@@ -79,8 +79,9 @@ you'd rather not install `just`.
 ### Testing
 
 - **100% branch coverage is required.** The gate lives in
-  `[tool.pytest.ini_options] addopts`, so it applies to every `pytest` run, not
-  just CI. Every new branch needs a test.
+  `[tool.pytest.ini_options] addopts`, so it applies to every plain `pytest`
+  run (including `just test-cov` and CI); only `just test` opts out with
+  `--no-cov`. Every new branch needs a test.
 - Scanner behavior is covered by parametrized tables in `tests/test_scanner.py`
   and `tests/test_encodings.py`. Add a row rather than a new test function when
   the case fits the existing table, and keep the comment above the tuple so the
@@ -108,14 +109,9 @@ you'd rather not install `just`.
 - Make sure `just check` passes cleanly before you open the PR.
 - **PRs are merged with a merge commit** — not squashed, not rebased.
 
-CI will run the full check suite against Python 3.11–3.14 on every pull
-request once #22 lands; until then, `just check` locally is the only gate.
+CI runs the full check suite against Python 3.11–3.14 on every pull request.
 
 ## Releasing
-
-> **Not live yet.** CI, the `version-guard` job and the release pipeline land in
-> #22 and #27. Until they do, nothing below runs — and `git describe --tags`
-> has no tag to find. This section describes the target state.
 
 Releases are published to PyPI automatically: the CD workflow fires when CI
 passes on `main` and publishes whenever `pyproject.toml`'s version isn't already
@@ -135,10 +131,11 @@ bump and apply it locally:
 | --- | --- | --- |
 | Any `feat:` | minor | `just bump-version minor` |
 | Only `fix:` / `docs:` / `chore:` | patch | `just bump-version patch` |
-| A breaking change (`feat!:`, `BREAKING CHANGE`) | major¹ | `just bump-version major` |
+| A breaking change (`feat!:`, `BREAKING CHANGE`) | minor (pre-1.0)¹ | `just bump-version minor` |
 
 ¹ While the project is pre-1.0, breaking changes are released as a **minor**
-bump per semver's 0.x convention.
+bump per semver's 0.x convention. Only once the project reaches 1.0 does a
+breaking change call for `just bump-version major`.
 
 Bumping is a local step — there is deliberately no bump-version workflow, since
 pull requests opened with `GITHUB_TOKEN` never trigger workflows and so could
