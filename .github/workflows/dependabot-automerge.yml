@@ -1,6 +1,12 @@
 name: Dependabot auto-merge
 
-on: pull_request
+on:
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/**"
+      - ".pre-commit-config.yaml"
 
 permissions:
   contents: write
