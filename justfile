@@ -16,9 +16,9 @@ install:
 run *args:
     uv run sillystrings "$@"
 
-# Run tests
+# Run tests without the coverage gate
 test:
-    uv run pytest
+    uv run pytest --no-cov
 
 # Run tests with coverage and enforce 100% execution
 test-cov:
