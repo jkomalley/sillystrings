@@ -143,8 +143,7 @@ never satisfy required status checks.
 
 Open the bump as its own `chore: release vX.Y.Z` PR that also renames
 `## [Unreleased]` to `## [X.Y.Z] - <date>` in `CHANGELOG.md`, adds a fresh empty
-`## [Unreleased]`, and adds the compare links at the bottom (the first
-release creates them; there is no tag to compare against yet). The release
+`## [Unreleased]`, and updates the compare links at the bottom. The release
 notes are extracted from that section, and the release fails if it is missing.
 
 The `version-guard` CI job enforces the bump size: it fails any release PR whose
