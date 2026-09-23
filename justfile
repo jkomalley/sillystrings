@@ -58,6 +58,11 @@ lock-upgrade:
     #!/usr/bin/env bash
     set -euo pipefail
 
+    if [ -n "$(git status --porcelain -- pyproject.toml uv.lock)" ]; then
+        echo "pyproject.toml or uv.lock has uncommitted changes; aborting." >&2
+        exit 1
+    fi
+
     BRANCH=$(git rev-parse --abbrev-ref HEAD)
     if [ "$BRANCH" = "main" ]; then
         TIMESTAMP=$(date +%s)
