@@ -1,6 +1,7 @@
 # Justfile for sillystrings project
 
 set shell := ["bash", "-c"]
+set positional-arguments
 
 # Show available recipes
 default:
@@ -13,11 +14,11 @@ install:
 
 # Run the CLI app locally. Usage: just run --help
 run *args:
-    uv run sillystrings {{args}}
+    uv run sillystrings "$@"
 
-# Run tests
+# Run tests without the coverage gate
 test:
-    uv run pytest
+    uv run pytest --no-cov
 
 # Run tests with coverage and enforce 100% execution
 test-cov:
@@ -56,6 +57,11 @@ clean:
 lock-upgrade:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    if [ -n "$(git status --porcelain -- pyproject.toml uv.lock)" ]; then
+        echo "pyproject.toml or uv.lock has uncommitted changes; aborting." >&2
+        exit 1
+    fi
 
     BRANCH=$(git rev-parse --abbrev-ref HEAD)
     if [ "$BRANCH" = "main" ]; then
