@@ -43,7 +43,7 @@ Key design decisions:
 - Commits must be atomic and follow Conventional Commits (`feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `deps`): one logical change per commit.
 - PRs that resolve an issue reference it with `Closes #N` so it closes automatically on merge.
 - **PRs are merged with a merge commit** — never squashed or rebased. Both break stacked PRs, and this project family works in stacks.
-- **Keep `CHANGELOG.md` release-ready.** Any user-facing change adds a bullet under `## [Unreleased]` in the same PR (internal-only refactors, CI, test, and docs changes are exempt). Group entries under `### Added`/`### Changed`/`### Fixed`/`### Removed` and end each with the PR ref `(#N)`. The seed entries under `[Unreleased]` predate this rule and carry no refs — follow the rule, not those.
+- **Keep `CHANGELOG.md` release-ready.** Any user-facing change adds a bullet under `## [Unreleased]` in the same PR (internal-only refactors, CI, test, and docs changes are exempt). Entries follow the existing Keep a Changelog style — grouped under `### Added`/`### Changed`/`### Fixed`/`### Removed`, one line each, ending with the PR ref `(#N)`.
 - **Releases are automated and notes come from the changelog — never hand-written commit dumps.** Cutting a release starts locally with `just bump-version <part>`; the CD workflow then publishes to PyPI and creates a GitHub release whose body is that version's `CHANGELOG.md` section. See CONTRIBUTING.md → Releasing for the bump-choice table and the reasoning.
 
 ## Code Style
