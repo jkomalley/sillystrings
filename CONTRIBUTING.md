@@ -109,14 +109,9 @@ you'd rather not install `just`.
 - Make sure `just check` passes cleanly before you open the PR.
 - **PRs are merged with a merge commit** — not squashed, not rebased.
 
-CI will run the full check suite against Python 3.11–3.14 on every pull
-request once #22 lands; until then, `just check` locally is the only gate.
+CI runs the full check suite against Python 3.11–3.14 on every pull request.
 
 ## Releasing
-
-> **Not live yet.** CI, the `version-guard` job and the release pipeline land in
-> #22 and #27. Until they do, nothing below runs — and `git describe --tags`
-> has no tag to find. This section describes the target state.
 
 Releases are published to PyPI automatically: the CD workflow fires when CI
 passes on `main` and publishes whenever `pyproject.toml`'s version isn't already
