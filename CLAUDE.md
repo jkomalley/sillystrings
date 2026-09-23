@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`sillystrings` is a pure-Python reimplementation of the Unix `strings` utility: it extracts printable character sequences from binary files. Python 3.11+, src layout, managed with `uv`, zero runtime dependencies. Not yet published — the first PyPI release is #27.
+`sillystrings` is a pure-Python reimplementation of the Unix `strings` utility: it extracts printable character sequences from binary files. Python 3.11+, src layout, managed with `uv`, zero runtime dependencies. Published on PyPI.
 
 ## Commands
 
@@ -44,7 +44,7 @@ Key design decisions:
 - PRs that resolve an issue reference it with `Closes #N` so it closes automatically on merge.
 - **PRs are merged with a merge commit** — never squashed or rebased. Both break stacked PRs, and this project family works in stacks.
 - **Keep `CHANGELOG.md` release-ready.** Any user-facing change adds a bullet under `## [Unreleased]` in the same PR (internal-only refactors, CI, test, and docs changes are exempt). Group entries under `### Added`/`### Changed`/`### Fixed`/`### Removed` and end each with the PR ref `(#N)`. The seed entries under `[Unreleased]` predate this rule and carry no refs — follow the rule, not those.
-- **Releases are automated and notes come from the changelog — never hand-written commit dumps.** Cutting a release starts locally with `just bump-version <part>`; the CD workflow then publishes to PyPI and creates a GitHub release whose body is that version's `CHANGELOG.md` section. See CONTRIBUTING.md → Releasing for the bump-choice table and the reasoning. **None of this exists yet** — CI is #22 and the release pipeline is #27.
+- **Releases are automated and notes come from the changelog — never hand-written commit dumps.** Cutting a release starts locally with `just bump-version <part>`; the CD workflow then publishes to PyPI and creates a GitHub release whose body is that version's `CHANGELOG.md` section. See CONTRIBUTING.md → Releasing for the bump-choice table and the reasoning.
 
 ## Code Style
 
