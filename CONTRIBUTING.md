@@ -136,10 +136,11 @@ bump and apply it locally:
 | --- | --- | --- |
 | Any `feat:` | minor | `just bump-version minor` |
 | Only `fix:` / `docs:` / `chore:` | patch | `just bump-version patch` |
-| A breaking change (`feat!:`, `BREAKING CHANGE`) | major¹ | `just bump-version major` |
+| A breaking change (`feat!:`, `BREAKING CHANGE`) | minor (pre-1.0)¹ | `just bump-version minor` |
 
 ¹ While the project is pre-1.0, breaking changes are released as a **minor**
-bump per semver's 0.x convention.
+bump per semver's 0.x convention. Only once the project reaches 1.0 does a
+breaking change call for `just bump-version major`.
 
 Bumping is a local step — there is deliberately no bump-version workflow, since
 pull requests opened with `GITHUB_TOKEN` never trigger workflows and so could
