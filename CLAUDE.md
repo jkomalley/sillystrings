@@ -12,7 +12,7 @@ Recipes live in the `justfile`; `just` (or `just --list`) prints them with their
 
 - `just install` — sync the venv and install the git hooks
 - `just run --help` — drive the CLI locally
-- `just test` / `just test-cov` — the suite (identical today: the coverage gate lives in `addopts`, so it applies to every run)
+- `just test` / `just test-cov` — the suite without / with the 100% coverage gate (the gate lives in `addopts`; `just test` opts out with `--no-cov`)
 - `just format` / `just format-check`, `just lint` / `just lint-check`, `just typecheck`
 - `just check` — everything, in the order CI will run it
 - `just clean`, `just lock-upgrade`, `just bump-version <part>`

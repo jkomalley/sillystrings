@@ -57,8 +57,8 @@ Or run individual tasks:
 just format     # ruff format
 just lint       # ruff check --fix
 just typecheck  # ty check src/
-just test       # pytest (the coverage gate applies -- see below)
-just test-cov   # same thing, named for symmetry with the other repos
+just test       # pytest without the coverage gate, for quick iteration
+just test-cov   # pytest with the 100% coverage gate
 just run --help # drive the CLI locally
 ```
 
@@ -79,8 +79,9 @@ you'd rather not install `just`.
 ### Testing
 
 - **100% branch coverage is required.** The gate lives in
-  `[tool.pytest.ini_options] addopts`, so it applies to every `pytest` run, not
-  just CI. Every new branch needs a test.
+  `[tool.pytest.ini_options] addopts`, so it applies to every plain `pytest`
+  run (including `just test-cov` and CI); only `just test` opts out with
+  `--no-cov`. Every new branch needs a test.
 - Scanner behavior is covered by parametrized tables in `tests/test_scanner.py`
   and `tests/test_encodings.py`. Add a row rather than a new test function when
   the case fits the existing table, and keep the comment above the tuple so the
