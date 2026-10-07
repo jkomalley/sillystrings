@@ -87,6 +87,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "-o",
+        dest="radix",
+        action="store_const",
+        const="o",
+        help="Like -t o. Print the offset within the file in octal.",
+    )
+    parser.add_argument(
         "-e",
         "--encoding",
         choices=get_args(Encoding),
