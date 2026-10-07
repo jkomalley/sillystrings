@@ -17,7 +17,17 @@ from sillystrings.cli import (
     positive_int,
 )
 
-from .conftest import S_ZEROFILL, MachOSection, build_macho
+from .conftest import (
+    S_ZEROFILL,
+    SHF_ALLOC,
+    SHF_EXECINSTR,
+    SHF_WRITE,
+    SHT_NOBITS,
+    ElfSection,
+    MachOSection,
+    build_elf,
+    build_macho,
+)
 
 
 def run(*args: str, data: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -549,6 +559,29 @@ class TestDataSections:
             f"{CSTRING:7d} abcd",
             f"{DATA:7d} efgh",
         ]
+
+    def test_data_scans_an_elf_objects_sections(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        f = tmp_path / "t.o"
+        data = build_elf(
+            [
+                ElfSection(".text", b"code", flags=SHF_ALLOC | SHF_EXECINSTR),
+                ElfSection(".rodata", b"abcd", flags=SHF_ALLOC),
+                ElfSection(".comment", b"GCC: (GNU) 13"),
+                ElfSection(
+                    ".bss", type=SHT_NOBITS, flags=SHF_ALLOC | SHF_WRITE, size=64
+                ),
+            ]
+        )
+        f.write_bytes(data)
+        out = self.run_main(mocker, capsys, "-d", "-t", "d", str(f))
+        assert out.splitlines() == [
+            f"{data.index(b'code'):7d} code",
+            f"{data.index(b'abcd'):7d} abcd",
+        ]
+        whole = self.run_main(mocker, capsys, "-t", "d", str(f))
+        assert f"{data.index(b'code'):7d} codeabcdGCC: (GNU) 13" in whole.splitlines()
 
     @pytest.mark.parametrize("argv", [[], ["-a"], ["-d", "-a"]])
     def test_whole_file_by_default_and_with_all(

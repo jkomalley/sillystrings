@@ -3,7 +3,7 @@
 
 Usage: uv run scripts/compare_gnu.py [--gnu PATH] [-n MIN] FILE [FILE ...]
 Requires: a GNU strings that understands your files' formats. On macOS,
-`brew install binutils` provides one that reads Mach-O; it is keg-only, so it
+`brew install binutils` provides one that reads Mach-O and ELF; it is keg-only, so it
 does not shadow the system strings. That is the default for --gnu.
 
 For each file and mode, runs `sillystrings MODE -n MIN -t d FILE` and the same
