@@ -1,5 +1,6 @@
 # tests/test_cli.py
 import argparse
+import os
 import subprocess
 import sys
 from io import BytesIO
@@ -631,3 +632,46 @@ class TestBrokenPipe:
         with pytest.raises(SystemExit) as exc:
             main()
         assert exc.value.code == 1
+
+    def test_main_exits_quietly_when_the_final_flush_hits_a_closed_pipe(
+        self,
+        tmp_path: Path,
+        mocker: MockerFixture,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        # Output small enough to stay buffered reaches the pipe only when
+        # stdout is flushed, after every print has succeeded (#56)
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"hello world\x00")
+        mocker.patch.object(sys, "argv", ["sillystrings", str(f)])
+        flush = mocker.patch.object(sys.stdout, "flush", side_effect=BrokenPipeError)
+
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+        # capsys flushes the stream it captured, so only main's flush may fail
+        flush.assert_called_once_with()
+        flush.side_effect = None
+        assert exc.value.code == 1
+        assert capsys.readouterr().err == ""
+
+    def test_reader_that_closes_before_reading(self, tmp_path: Path) -> None:
+        # `sillystrings small.bin | true`: the read end is closed before the
+        # process starts, so the only write -- the final flush -- always fails.
+        # Unhandled, the interpreter reports it at shutdown and exits 120.
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"hello world\x00second string\x00")
+        read_fd, write_fd = os.pipe()
+        os.close(read_fd)
+        cmd = ["uv", "run", "sillystrings", str(f)]
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=write_fd,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+        finally:
+            os.close(write_fd)
+        assert result.returncode == 1
+        assert result.stderr == b""
