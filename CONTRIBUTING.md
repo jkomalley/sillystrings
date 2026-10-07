@@ -107,9 +107,9 @@ you'd rather not install `just`.
 
 `-d` is meant to scan exactly the sections GNU `strings -d` scans, so changes
 to a format parser should be checked against GNU itself. On macOS,
-`brew install binutils` gives a GNU `strings` that reads Mach-O (keg-only, so
-it doesn't shadow the system `strings`). Then run the comparison on any
-binaries you like:
+`brew install binutils` gives a GNU `strings` that reads Mach-O and ELF
+(keg-only, so it doesn't shadow the system `strings`); on Linux, the distro's
+`strings` reads ELF. Then run the comparison on any binaries you like:
 
 ```bash
 uv run scripts/compare_gnu.py /bin/ls build/foo.o some.dylib
@@ -122,11 +122,14 @@ does not, so the script splits GNU's strings on tabs before comparing (the
 script's docstring explains why that is exact); the "raw" column shows the
 unnormalized result.
 
-The Mach-O structs and constants are checked separately, against the real
-`<mach-o/loader.h>`: `tests/test_macho_constants.py` compiles a C program that
-prints every `offsetof`, `sizeof` and constant, and compares them with both the
-parser's and `build_macho`'s definitions. It runs on any Mac with a C compiler
-and is skipped elsewhere.
+The structs and constants are checked separately, against the real system
+headers: `tests/test_macho_constants.py` and `tests/test_elf_constants.py` each
+compile a C program that prints every `offsetof`, `sizeof` and constant, and
+compare them with both the parser's and the builder's definitions. The Mach-O
+test needs `<mach-o/loader.h>`, so it runs on any Mac with a C compiler; the
+ELF test needs glibc's `<elf.h>`, so it runs on Linux, including CI. Each is
+skipped where its header is missing. To run the ELF one from a Mac, use a Linux
+VM or container with `gcc` and `uv`.
 
 ## Pull requests
 
