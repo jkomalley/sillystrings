@@ -16,8 +16,17 @@ from sillystrings.cli import (
     positive_int,
 )
 
-from .conftest import S_ZEROFILL, ElfSection, MachOSection, build_elf, build_macho
-from .test_elf import SHF_ALLOC, SHF_EXECINSTR, SHF_WRITE, SHT_NOBITS
+from .conftest import (
+    S_ZEROFILL,
+    SHF_ALLOC,
+    SHF_EXECINSTR,
+    SHF_WRITE,
+    SHT_NOBITS,
+    ElfSection,
+    MachOSection,
+    build_elf,
+    build_macho,
+)
 
 
 def run(*args: str, data: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
