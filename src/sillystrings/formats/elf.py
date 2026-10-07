@@ -1,95 +1,202 @@
+"""ELF data sections, as GNU `strings -d` sees them.
+
+The structs and constants below are transcribed from <elf.h>, in header order
+and with the header's names, so each can be checked against it line by line;
+tests/test_elf_constants.py also checks them against the real header with a C
+compiler. The rules for which sections count as data come from GNU binutils
+2.47 and cite the function they mirror.
+"""
+
+import functools
 import struct
 from dataclasses import dataclass
+from typing import Annotated, NamedTuple, get_type_hints
 
 from sillystrings.formats.common import Section
 
-# elf.h: #define ELFMAG "\177ELF", at e_ident[EI_MAG0..EI_MAG3]
-_ELFMAG = b"\x7fELF"
-# elf.h: #define EI_NIDENT (16)
-_EI_NIDENT = 16
-# elf.h: #define EI_CLASS 4, EI_DATA 5, EI_VERSION 6 (indexes into e_ident)
-_EI_CLASS = 4
-_EI_DATA = 5
-_EI_VERSION = 6
-# elf.h: #define ELFCLASS32 1, ELFCLASS64 2
-_ELFCLASS32 = 1
-_ELFCLASS64 = 2
-# elf.h: #define ELFDATA2LSB 1, ELFDATA2MSB 2
-_ELFDATA2LSB = 1
-_ELFDATA2MSB = 2
-# elf.h: #define EV_CURRENT 1
-_EV_CURRENT = 1
+# --------------------------------------------------------------------------- #
+# Constants from <elf.h>
+# --------------------------------------------------------------------------- #
 
-# elf.h: #define ET_EXEC 2, ET_DYN 3, ET_CORE 4 (values of e_type)
-_ET_EXEC = 2
-_ET_DYN = 3
-_ET_CORE = 4
+EI_NIDENT = 16  # elf.h: #define EI_NIDENT (16)
+ELFMAG0 = 0x7F  # elf.h: #define ELFMAG0 0x7f
+ELFMAG1 = ord("E")  # elf.h: #define ELFMAG1 'E'
+ELFMAG2 = ord("L")  # elf.h: #define ELFMAG2 'L'
+ELFMAG3 = ord("F")  # elf.h: #define ELFMAG3 'F'
+ELFMAG = bytes([ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3])  # elf.h: #define ELFMAG "\177ELF"
+SELFMAG = 4  # elf.h: #define SELFMAG 4
+EI_CLASS = 4  # elf.h: #define EI_CLASS 4
+ELFCLASS32 = 1  # elf.h: #define ELFCLASS32 1
+ELFCLASS64 = 2  # elf.h: #define ELFCLASS64 2
+EI_DATA = 5  # elf.h: #define EI_DATA 5
+ELFDATA2LSB = 1  # elf.h: #define ELFDATA2LSB 1
+ELFDATA2MSB = 2  # elf.h: #define ELFDATA2MSB 2
+EI_VERSION = 6  # elf.h: #define EI_VERSION 6
+EV_CURRENT = 1  # elf.h: #define EV_CURRENT 1
 
-# elf.h: #define SHN_UNDEF 0, SHN_LORESERVE 0xff00, SHN_XINDEX 0xffff
-_SHN_UNDEF = 0
-_SHN_LORESERVE = 0xFF00
-_SHN_XINDEX = 0xFFFF
+ET_EXEC = 2  # elf.h: #define ET_EXEC 2
+ET_DYN = 3  # elf.h: #define ET_DYN 3
+ET_CORE = 4  # elf.h: #define ET_CORE 4
 
-# elf.h: #define SHT_NULL 0, SHT_SYMTAB 2, SHT_STRTAB 3, SHT_RELA 4, SHT_NOTE 7,
-# SHT_NOBITS 8, SHT_REL 9, SHT_SHLIB 10, SHT_SYMTAB_SHNDX 18 (values of sh_type)
-_SHT_NULL = 0
-_SHT_SYMTAB = 2
-_SHT_STRTAB = 3
-_SHT_RELA = 4
-_SHT_NOTE = 7
-_SHT_NOBITS = 8
-_SHT_REL = 9
-_SHT_SHLIB = 10
-_SHT_SYMTAB_SHNDX = 18
+SHN_UNDEF = 0  # elf.h: #define SHN_UNDEF 0
+SHN_LORESERVE = 0xFF00  # elf.h: #define SHN_LORESERVE 0xff00
+SHN_XINDEX = 0xFFFF  # elf.h: #define SHN_XINDEX 0xffff
 
-# elf.h: #define SHF_ALLOC (1 << 1), SHF_COMPRESSED (1 << 11) (bits of sh_flags)
-_SHF_ALLOC = 1 << 1
-_SHF_COMPRESSED = 1 << 11
+SHT_NULL = 0  # elf.h: #define SHT_NULL 0
+SHT_SYMTAB = 2  # elf.h: #define SHT_SYMTAB 2
+SHT_STRTAB = 3  # elf.h: #define SHT_STRTAB 3
+SHT_RELA = 4  # elf.h: #define SHT_RELA 4
+SHT_NOTE = 7  # elf.h: #define SHT_NOTE 7
+SHT_NOBITS = 8  # elf.h: #define SHT_NOBITS 8
+SHT_REL = 9  # elf.h: #define SHT_REL 9
+SHT_SHLIB = 10  # elf.h: #define SHT_SHLIB 10
+SHT_SYMTAB_SHNDX = 18  # elf.h: #define SHT_SYMTAB_SHNDX 18
+
+SHF_ALLOC = 1 << 1  # elf.h: #define SHF_ALLOC (1 << 1)
+SHF_COMPRESSED = 1 << 11  # elf.h: #define SHF_COMPRESSED (1 << 11)
+
+# --------------------------------------------------------------------------- #
+# Structs from <elf.h>
+#
+# Each field is annotated with its struct format code: H = uint16_t
+# (Elf32_Half, Elf64_Half), I = uint32_t (Elf32_Word, Elf32_Addr, Elf32_Off,
+# Elf64_Word), Q = uint64_t (Elf64_Xword, Elf64_Addr, Elf64_Off),
+# 16s = unsigned char[EI_NIDENT]. The byte order is chosen per file, from
+# e_ident[EI_DATA]. The class names are the header's typedef names.
+# --------------------------------------------------------------------------- #
+
+
+class Elf32_Ehdr(NamedTuple):  # noqa: N801 -- the header's typedef name
+    """elf.h: Elf32_Ehdr."""
+
+    e_ident: Annotated[bytes, "16s"]  # unsigned char e_ident[EI_NIDENT]
+    e_type: Annotated[int, "H"]  # Elf32_Half e_type
+    e_machine: Annotated[int, "H"]  # Elf32_Half e_machine
+    e_version: Annotated[int, "I"]  # Elf32_Word e_version
+    e_entry: Annotated[int, "I"]  # Elf32_Addr e_entry
+    e_phoff: Annotated[int, "I"]  # Elf32_Off e_phoff
+    e_shoff: Annotated[int, "I"]  # Elf32_Off e_shoff
+    e_flags: Annotated[int, "I"]  # Elf32_Word e_flags
+    e_ehsize: Annotated[int, "H"]  # Elf32_Half e_ehsize
+    e_phentsize: Annotated[int, "H"]  # Elf32_Half e_phentsize
+    e_phnum: Annotated[int, "H"]  # Elf32_Half e_phnum
+    e_shentsize: Annotated[int, "H"]  # Elf32_Half e_shentsize
+    e_shnum: Annotated[int, "H"]  # Elf32_Half e_shnum
+    e_shstrndx: Annotated[int, "H"]  # Elf32_Half e_shstrndx
+
+
+class Elf64_Ehdr(NamedTuple):  # noqa: N801 -- the header's typedef name
+    """elf.h: Elf64_Ehdr."""
+
+    e_ident: Annotated[bytes, "16s"]  # unsigned char e_ident[EI_NIDENT]
+    e_type: Annotated[int, "H"]  # Elf64_Half e_type
+    e_machine: Annotated[int, "H"]  # Elf64_Half e_machine
+    e_version: Annotated[int, "I"]  # Elf64_Word e_version
+    e_entry: Annotated[int, "Q"]  # Elf64_Addr e_entry
+    e_phoff: Annotated[int, "Q"]  # Elf64_Off e_phoff
+    e_shoff: Annotated[int, "Q"]  # Elf64_Off e_shoff
+    e_flags: Annotated[int, "I"]  # Elf64_Word e_flags
+    e_ehsize: Annotated[int, "H"]  # Elf64_Half e_ehsize
+    e_phentsize: Annotated[int, "H"]  # Elf64_Half e_phentsize
+    e_phnum: Annotated[int, "H"]  # Elf64_Half e_phnum
+    e_shentsize: Annotated[int, "H"]  # Elf64_Half e_shentsize
+    e_shnum: Annotated[int, "H"]  # Elf64_Half e_shnum
+    e_shstrndx: Annotated[int, "H"]  # Elf64_Half e_shstrndx
+
+
+class Elf32_Shdr(NamedTuple):  # noqa: N801 -- the header's typedef name
+    """elf.h: Elf32_Shdr."""
+
+    sh_name: Annotated[int, "I"]  # Elf32_Word sh_name
+    sh_type: Annotated[int, "I"]  # Elf32_Word sh_type
+    sh_flags: Annotated[int, "I"]  # Elf32_Word sh_flags
+    sh_addr: Annotated[int, "I"]  # Elf32_Addr sh_addr
+    sh_offset: Annotated[int, "I"]  # Elf32_Off sh_offset
+    sh_size: Annotated[int, "I"]  # Elf32_Word sh_size
+    sh_link: Annotated[int, "I"]  # Elf32_Word sh_link
+    sh_info: Annotated[int, "I"]  # Elf32_Word sh_info
+    sh_addralign: Annotated[int, "I"]  # Elf32_Word sh_addralign
+    sh_entsize: Annotated[int, "I"]  # Elf32_Word sh_entsize
+
+
+class Elf64_Shdr(NamedTuple):  # noqa: N801 -- the header's typedef name
+    """elf.h: Elf64_Shdr."""
+
+    sh_name: Annotated[int, "I"]  # Elf64_Word sh_name
+    sh_type: Annotated[int, "I"]  # Elf64_Word sh_type
+    sh_flags: Annotated[int, "Q"]  # Elf64_Xword sh_flags
+    sh_addr: Annotated[int, "Q"]  # Elf64_Addr sh_addr
+    sh_offset: Annotated[int, "Q"]  # Elf64_Off sh_offset
+    sh_size: Annotated[int, "Q"]  # Elf64_Xword sh_size
+    sh_link: Annotated[int, "I"]  # Elf64_Word sh_link
+    sh_info: Annotated[int, "I"]  # Elf64_Word sh_info
+    sh_addralign: Annotated[int, "Q"]  # Elf64_Xword sh_addralign
+    sh_entsize: Annotated[int, "Q"]  # Elf64_Xword sh_entsize
+
+
+@functools.cache
+def struct_format(cls: type[tuple]) -> str:
+    """Join a struct's per-field format codes, in field order, with no byte order.
+
+    Args:
+        cls (type[tuple]): One of the NamedTuple structs above.
+
+    Returns:
+        str: The struct module format for the whole C struct.
+    """
+    # Annotations keep the order the fields were declared in
+    hints = get_type_hints(cls, include_extras=True)
+    return "".join(hint.__metadata__[0] for hint in hints.values())
+
+
+def sizeof(cls: type[tuple]) -> int:
+    """The size of a C struct in bytes, like C's sizeof.
+
+    Args:
+        cls (type[tuple]): One of the NamedTuple structs above.
+
+    Returns:
+        int: The struct's size, from its field formats.
+    """
+    # Standard sizes and no alignment padding: elf.h's headers have none
+    return struct.calcsize("<" + struct_format(cls))
+
+
+# --------------------------------------------------------------------------- #
+# Parsing
+# --------------------------------------------------------------------------- #
+
+_Ehdr = Elf32_Ehdr | Elf64_Ehdr
+_Shdr = Elf32_Shdr | Elf64_Shdr
 
 
 @dataclass(frozen=True)
 class _Layout:
-    """The header structs of one word size and byte order."""
+    """The structs of one ELF variant: its class and byte order."""
 
-    ehdr: struct.Struct  # Elf32_Ehdr / Elf64_Ehdr, after e_ident
-    shdr: struct.Struct  # Elf32_Shdr / Elf64_Shdr
+    byte_order: str  # a struct module byte order: "<" or ">"
+    ehdr: type[Elf32_Ehdr] | type[Elf64_Ehdr]
+    shdr: type[Elf32_Shdr] | type[Elf64_Shdr]
 
+    def read_ehdr(self, data: bytes | memoryview) -> _Ehdr:
+        """Unpack the ELF header at the start of data."""
+        return self.ehdr._make(self._unpack(self.ehdr, data, 0))
 
-def _layout(endian: str, *, is_64: bool) -> _Layout:
-    # elf.h: Elf{32,64}_Ehdr is e_ident[16], e_type, e_machine (Elf_Half),
-    # e_version (Elf_Word), e_entry (Addr), e_phoff, e_shoff (Off), e_flags
-    # (Word), e_ehsize, e_phentsize, e_phnum, e_shentsize, e_shnum, e_shstrndx
-    # (Half). Elf{32,64}_Shdr is sh_name, sh_type (Word), sh_flags (Word / Xword),
-    # sh_addr (Addr), sh_offset (Off), sh_size (Word / Xword), sh_link, sh_info
-    # (Word), sh_addralign, sh_entsize (Word / Xword). Addr, Off and Xword are
-    # 4 bytes in ELF32 and 8 in ELF64; Half is 2 and Word is 4 in both.
-    word = "Q" if is_64 else "I"
-    return _Layout(
-        ehdr=struct.Struct(f"{endian}{_EI_NIDENT}xHHI{word * 3}IHHHHHH"),
-        shdr=struct.Struct(f"{endian}II{word * 4}II{word * 2}"),
-    )
+    def read_shdr(self, data: bytes | memoryview, offset: int) -> _Shdr:
+        """Unpack the section header at offset."""
+        return self.shdr._make(self._unpack(self.shdr, data, offset))
+
+    def _unpack(self, cls: type[tuple], data: bytes | memoryview, offset: int) -> tuple:
+        return struct.unpack_from(self.byte_order + struct_format(cls), data, offset)
 
 
 # Keyed by (e_ident[EI_CLASS], e_ident[EI_DATA])
 _LAYOUTS = {
-    (_ELFCLASS32, _ELFDATA2LSB): _layout("<", is_64=False),
-    (_ELFCLASS32, _ELFDATA2MSB): _layout(">", is_64=False),
-    (_ELFCLASS64, _ELFDATA2LSB): _layout("<", is_64=True),
-    (_ELFCLASS64, _ELFDATA2MSB): _layout(">", is_64=True),
+    (ELFCLASS32, ELFDATA2LSB): _Layout("<", Elf32_Ehdr, Elf32_Shdr),
+    (ELFCLASS32, ELFDATA2MSB): _Layout(">", Elf32_Ehdr, Elf32_Shdr),
+    (ELFCLASS64, ELFDATA2LSB): _Layout("<", Elf64_Ehdr, Elf64_Shdr),
+    (ELFCLASS64, ELFDATA2MSB): _Layout(">", Elf64_Ehdr, Elf64_Shdr),
 }
-
-
-@dataclass(frozen=True)
-class _Shdr:
-    """The section header fields the data rule reads."""
-
-    name: int
-    type: int
-    flags: int
-    offset: int
-    size: int
-    link: int
-    info: int
 
 
 def data_sections(data: bytes | memoryview) -> list[Section] | None:
@@ -107,132 +214,129 @@ def data_sections(data: bytes | memoryview) -> list[Section] | None:
             raises on bad input.
     """
     layout = _ident(data)
-    if layout is None or len(data) < _EI_NIDENT + layout.ehdr.size:
+    if layout is None or len(data) < sizeof(layout.ehdr):
         return None
-    (e_type, _, _, _, _, e_shoff, _, _, _, _, e_shentsize, e_shnum, e_shstrndx) = (
-        layout.ehdr.unpack_from(data)
-    )
-    # BFD opens a core file as bfd_core, not bfd_object, so GNU scans it whole
-    if e_type == _ET_CORE:
+    ehdr = layout.read_ehdr(data)
+    # binutils 2.47 bfd/elfcode.h, elf_object_p: a core file is rejected as an
+    # object (BFD opens it as bfd_core instead), so GNU scans it whole
+    if ehdr.e_type == ET_CORE:
         return None
-    # No section header table: BFD makes no sections from the program headers,
-    # so there is nothing to scan
-    if e_shoff == 0 and e_shnum == 0:
+    # elf_object_p: with no section header table BFD makes no sections -- it
+    # does not build them from the program headers -- so nothing is scanned
+    if ehdr.e_shoff == 0 and ehdr.e_shnum == 0:
         return []
-    headers = _section_headers(data, layout, e_shoff, e_shentsize, e_shnum)
+    headers = _section_headers(data, layout, ehdr)
     if headers is None:
         return None
-    if e_shstrndx == _SHN_XINDEX:
-        e_shstrndx = headers[0].link
-    # BFD resets a bad string table index to SHN_UNDEF, and then builds no
-    # sections at all (binutils bfd/elfcode.h elf_object_p)
+    shstrndx = ehdr.e_shstrndx
+    # Extended numbering: an index of SHN_LORESERVE or more is in section 0
+    if shstrndx == SHN_XINDEX:
+        shstrndx = headers[0].sh_link
+    # elf_object_p: BFD resets a bad string table index to SHN_UNDEF, and
+    # then builds no sections at all
     if (
-        not _SHN_UNDEF < e_shstrndx < len(headers)
-        or headers[e_shstrndx].type != _SHT_STRTAB
+        not SHN_UNDEF < shstrndx < len(headers)
+        or headers[shstrndx].sh_type != SHT_STRTAB
     ):
         return []
-    return _scan_sections(data, headers, e_type, e_shstrndx)
+    return _scan_sections(data, headers, ehdr.e_type, shstrndx)
 
 
 def _ident(data: bytes | memoryview) -> _Layout | None:
-    if len(data) < _EI_NIDENT or bytes(data[: len(_ELFMAG)]) != _ELFMAG:
+    # e_ident: the magic, then the class, byte order and version bytes
+    if len(data) < EI_NIDENT or bytes(data[:SELFMAG]) != ELFMAG:
         return None
-    if data[_EI_VERSION] != _EV_CURRENT:
+    if data[EI_VERSION] != EV_CURRENT:
         return None
-    return _LAYOUTS.get((data[_EI_CLASS], data[_EI_DATA]))
+    return _LAYOUTS.get((data[EI_CLASS], data[EI_DATA]))
 
 
 def _section_headers(
-    data: bytes | memoryview,
-    layout: _Layout,
-    e_shoff: int,
-    e_shentsize: int,
-    e_shnum: int,
+    data: bytes | memoryview, layout: _Layout, ehdr: _Ehdr
 ) -> list[_Shdr] | None:
-    # The table must start past the ELF header and hold entries of exactly the
-    # size BFD expects (binutils bfd/elfcode.h elf_object_p)
-    header_size = _EI_NIDENT + layout.ehdr.size
-    if e_shoff < header_size or e_shentsize != layout.shdr.size:
+    shdr_size = sizeof(layout.shdr)
+    # binutils 2.47 bfd/elfcode.h, elf_object_p: the table must start past the
+    # ELF header and hold entries of exactly the struct's size
+    if ehdr.e_shoff < sizeof(layout.ehdr) or ehdr.e_shentsize != shdr_size:
         return None
-    if e_shoff + layout.shdr.size > len(data):
+    if ehdr.e_shoff + shdr_size > len(data):
         return None
-    first = _read_shdr(data, layout, e_shoff)
-    # Extended numbering: with SHN_LORESERVE or more sections, e_shnum is 0 and
-    # the count is section 0's sh_size
-    if e_shnum == _SHN_UNDEF:
-        e_shnum = first.size
-        if not 0 < e_shnum < _SHN_LORESERVE:
+    first = layout.read_shdr(data, ehdr.e_shoff)
+    shnum = ehdr.e_shnum
+    # Extended numbering: with SHN_LORESERVE or more sections, e_shnum is
+    # SHN_UNDEF and the count is section 0's sh_size
+    if shnum == SHN_UNDEF:
+        shnum = first.sh_size
+        if not SHN_UNDEF < shnum < SHN_LORESERVE:
             return None
-    if e_shoff + e_shnum * layout.shdr.size > len(data):
+    if ehdr.e_shoff + shnum * shdr_size > len(data):
         return None
     return [
-        _read_shdr(data, layout, e_shoff + index * layout.shdr.size)
-        for index in range(e_shnum)
+        layout.read_shdr(data, ehdr.e_shoff + index * shdr_size)
+        for index in range(shnum)
     ]
 
 
-def _read_shdr(data: bytes | memoryview, layout: _Layout, offset: int) -> _Shdr:
-    name, type_, flags, _, sh_offset, size, link, info, _, _ = layout.shdr.unpack_from(
-        data, offset
-    )
-    return _Shdr(name, type_, flags, sh_offset, size, link, info)
-
-
 def _scan_sections(
-    data: bytes | memoryview, headers: list[_Shdr], e_type: int, e_shstrndx: int
+    data: bytes | memoryview, headers: list[_Shdr], e_type: int, shstrndx: int
 ) -> list[Section] | None:
-    names = _string_table(data, headers[e_shstrndx])
-    # BFD keeps the first symbol table as the object's own; any later one is
-    # ignored, along with its string table. With none, BFD looks up the string
-    # table of section 0, which is never a string table, and so do we.
+    names = _string_table(data, headers[shstrndx])
+    # binutils 2.47 bfd/elf.c, bfd_section_from_shdr: BFD keeps the first
+    # symbol table as the object's own; any later one is ignored, along with
+    # its string table. With none, BFD looks up the string table of section 0,
+    # which is never a string table, and so do we.
     symtab = next(
-        (index for index, hdr in enumerate(headers) if hdr.type == _SHT_SYMTAB),
-        _SHN_UNDEF,
+        (index for index, hdr in enumerate(headers) if hdr.sh_type == SHT_SYMTAB),
+        SHN_UNDEF,
     )
     result: list[Section] = []
     for index, hdr in enumerate(headers):
-        if index == _SHN_UNDEF:
+        if index == SHN_UNDEF:
             continue
-        name = _name(names, hdr.name)
-        # BFD looks up every section's name as it builds the sections, and
-        # rejects the object when one is unreadable
+        name = _name(names, hdr.sh_name)
+        # bfd_section_from_shdr looks up every section's name as it builds the
+        # sections, and the object is rejected when one is unreadable
         if name is None:
             return None
         in_file = _in_file(data, hdr)
-        # BFD parses every note section while opening the object, so a note it
-        # cannot read rejects the whole object, not just the section
-        if hdr.type == _SHT_NOTE and hdr.size != 0 and not in_file:
+        # bfd/elf.c, _bfd_elf_make_section_from_shdr: BFD parses every note
+        # section while opening the object, so a note it cannot read rejects
+        # the whole object, not just the section
+        if hdr.sh_type == SHT_NOTE and hdr.sh_size != 0 and not in_file:
             return None
-        if not _is_data(headers, index, e_type, e_shstrndx, symtab):
+        if not _is_data(headers, index, e_type, shstrndx, symtab):
             continue
-        # GNU reports a section it cannot read and scans the rest
+        # binutils/strings.c, strings_a_section: GNU reports a section it
+        # cannot read and scans the rest
         if not in_file:
             continue
-        result.append(Section(name, hdr.offset, hdr.size))
+        result.append(Section(name, hdr.sh_offset, hdr.sh_size))
     return result
 
 
 def _is_data(
-    headers: list[_Shdr], index: int, e_type: int, e_shstrndx: int, symtab: int
+    headers: list[_Shdr], index: int, e_type: int, shstrndx: int, symtab: int
 ) -> bool:
-    # GNU strings -d scans a section only if BFD marks it ALLOC, LOAD and
-    # HAS_CONTENTS, and it is not empty. For ELF that is SHF_ALLOC on any type
-    # but SHT_NOBITS (binutils bfd/elf.c _bfd_elf_make_section_from_shdr), so
-    # code is scanned. Names don't matter: BFD only recognizes debug sections
-    # by name when they lack SHF_ALLOC. What remains is the headers BFD never
-    # makes a section from (bfd/elf.c bfd_section_from_shdr).
     hdr = headers[index]
-    if not hdr.flags & _SHF_ALLOC or hdr.type == _SHT_NOBITS or hdr.size == 0:
+    # binutils 2.47 binutils/strings.c, strings_a_section: -d scans a section
+    # only if its BFD flags include all of DATA_FLAGS (SEC_ALLOC | SEC_LOAD |
+    # SEC_HAS_CONTENTS), and skips it if its size is 0.
+    # bfd/elf.c, _bfd_elf_make_section_from_shdr: SEC_ALLOC is SHF_ALLOC;
+    # SEC_LOAD and SEC_HAS_CONTENTS are any type but SHT_NOBITS -- the type
+    # alone, not the offset. So code is scanned, and names never matter: BFD
+    # only recognizes debug sections by name when they lack SHF_ALLOC.
+    if not hdr.sh_flags & SHF_ALLOC or hdr.sh_type == SHT_NOBITS or hdr.sh_size == 0:
         return False
-    if hdr.type in {_SHT_NULL, _SHT_SHLIB, _SHT_SYMTAB_SHNDX}:
+    # bfd/elf.c, bfd_section_from_shdr: the headers BFD makes no section from
+    if hdr.sh_type in {SHT_NULL, SHT_SHLIB, SHT_SYMTAB_SHNDX}:
         return False
-    if hdr.type == _SHT_SYMTAB:
+    if hdr.sh_type == SHT_SYMTAB:
         # A shared object may map its symbol table in, and only there does BFD
         # treat it as a section too
-        return e_type == _ET_DYN and index == symtab
-    if hdr.type == _SHT_STRTAB:
-        return index not in {e_shstrndx, headers[symtab].link}
-    if hdr.type in {_SHT_REL, _SHT_RELA}:
+        return e_type == ET_DYN and index == symtab
+    if hdr.sh_type == SHT_STRTAB:
+        return index not in {shstrndx, headers[symtab].sh_link}
+    if hdr.sh_type in {SHT_REL, SHT_RELA}:
         return not _is_attached_reloc(headers, hdr, e_type, symtab)
     return True
 
@@ -240,34 +344,37 @@ def _is_data(
 def _is_attached_reloc(
     headers: list[_Shdr], hdr: _Shdr, e_type: int, symtab: int
 ) -> bool:
-    # BFD folds a relocation section into the section it applies to, rather
-    # than making a section of it, when it can: outside executables and shared
-    # objects, for an uncompressed section using the object's symbol table and
-    # naming a target that is not itself relocations
-    if e_type in {_ET_EXEC, _ET_DYN} or hdr.flags & _SHF_COMPRESSED:
+    # binutils 2.47 bfd/elf.c, bfd_section_from_shdr: BFD folds a relocation
+    # section into the section it applies to, rather than making a section of
+    # it, when it can: outside executables and shared objects, for an
+    # uncompressed section using the object's symbol table and naming a target
+    # that is not itself relocations
+    if e_type in {ET_EXEC, ET_DYN} or hdr.sh_flags & SHF_COMPRESSED:
         return False
-    if hdr.link == _SHN_UNDEF or hdr.link != symtab:
+    if hdr.sh_link == SHN_UNDEF or hdr.sh_link != symtab:
         return False
-    if not _SHN_UNDEF < hdr.info < len(headers):
+    if not SHN_UNDEF < hdr.sh_info < len(headers):
         return False
-    return headers[hdr.info].type not in {_SHT_REL, _SHT_RELA}
+    return headers[hdr.sh_info].sh_type not in {SHT_REL, SHT_RELA}
 
 
 def _in_file(data: bytes | memoryview, hdr: _Shdr) -> bool:
-    return hdr.offset + hdr.size <= len(data)
+    return hdr.sh_offset + hdr.sh_size <= len(data)
 
 
 def _string_table(data: bytes | memoryview, hdr: _Shdr) -> bytes | None:
     # Copied once, rather than per name, since a damaged header can make the
-    # table as large as the file. BFD treats its last byte as the terminator,
+    # table as large as the file. binutils 2.47 bfd/elf.c,
+    # bfd_elf_get_str_section: BFD treats its last byte as the terminator,
     # whatever that byte holds, so it is left out.
-    if hdr.size == 0 or not _in_file(data, hdr):
+    if hdr.sh_size == 0 or not _in_file(data, hdr):
         return None
-    return bytes(data[hdr.offset : hdr.offset + hdr.size - 1])
+    return bytes(data[hdr.sh_offset : hdr.sh_offset + hdr.sh_size - 1])
 
 
 def _name(table: bytes | None, offset: int) -> str | None:
-    # Offset 0 is the empty name, which BFD resolves without reading the table
+    # binutils 2.47 bfd/elf.c, bfd_elf_string_from_elf_section: offset 0 is
+    # the empty name, which BFD resolves without reading the table
     if offset == 0:
         return ""
     # The terminator left out of the table is still a valid place to start
