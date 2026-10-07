@@ -296,6 +296,13 @@ class TestTables:
         # BFD presents these as a plain section instead
         assert self._reloc_scanned(self._rela(**fields))
 
+    def test_relocations_without_any_symbol_table(self) -> None:
+        # sh_link 0 matches "no symbol table" too, but BFD checks for
+        # SHN_UNDEF first and presents the section as it is
+        text = ElfSection(".text", b"code", flags=SHF_ALLOC | SHF_EXECINSTR)
+        rela = self._rela(link=SHN_UNDEF, info=1)
+        assert names(data_sections(build_elf([text, rela]))) == [".text", rela.name]
+
 
 def test_hand_assembled_big_endian_32_bit_object() -> None:
     # Byte by byte from the offsets of Elf32_Ehdr and Elf32_Shdr in elf.h,
@@ -391,6 +398,15 @@ class TestNoSections:
         data = build_elf([rodata()])
         assert data_sections(patch_ehdr(data, "e_shstrndx", shstrndx)) == []
 
+    def test_section_0_is_never_the_name_table(self) -> None:
+        # Even typed and placed as a string table: e_shstrndx 0 is SHN_UNDEF
+        data = build_elf([rodata()])
+        shstrndx = read_ehdr(data, "e_shstrndx")
+        null = patch_shdr(data, 0, "sh_type", SHT_STRTAB)
+        for name in ("sh_offset", "sh_size"):
+            null = patch_shdr(null, 0, name, read_shdr(data, shstrndx, name))
+        assert data_sections(patch_ehdr(null, "e_shstrndx", SHN_UNDEF)) == []
+
 
 class TestMalformed:
     @pytest.fixture
@@ -480,6 +496,15 @@ class TestMalformed:
         else:
             assert data_sections(patched) is None
 
+    def test_name_at_the_table_terminator(self, data: bytes) -> None:
+        # The table's last byte is a valid, empty name; one past it is not
+        size = read_shdr(data, read_ehdr(data, "e_shstrndx"), "sh_size")
+        assert names(data_sections(patch_shdr(data, 1, "sh_name", size - 1))) == [
+            "",
+            ".data",
+        ]
+        assert data_sections(patch_shdr(data, 1, "sh_name", size)) is None
+
     def test_name_table_outside_the_file_is_none(self, data: bytes) -> None:
         shstrndx = read_ehdr(data, "e_shstrndx")
         assert data_sections(patch_shdr(data, shstrndx, "sh_offset", 2**40)) is None
@@ -488,6 +513,8 @@ class TestMalformed:
         shstrndx = read_ehdr(data, "e_shstrndx")
         empty = patch_shdr(data, shstrndx, "sh_size", 0)
         assert data_sections(empty) is None
+        # At offset 0 too, where the file's own bytes must not stand in for it
+        assert data_sections(patch_shdr(empty, shstrndx, "sh_offset", 0)) is None
         # ...unless every section has the empty name, which needs no table
         for index in range(1, shstrndx + 1):
             empty = patch_shdr(empty, index, "sh_name", 0)
