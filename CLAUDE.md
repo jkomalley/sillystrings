@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Recipes live in the `justfile`; `just` (or `just --list`) prints them with their descriptions. Do not restate their expansions here — that is what rots.
 
-- `just install` — sync the venv and install the git hooks
+- `just install` — sync the venv and install the git hooks. Run it only in the main checkout, never in a `git worktree`: hooks live in the shared `.git/hooks` and record the installing venv's path, so installing from a worktree breaks commits everywhere once that worktree is removed. In a worktree, `uv sync` is enough.
 - `just run --help` — drive the CLI locally
 - `just test` / `just test-cov` — the suite without / with the 100% coverage gate (the gate lives in `addopts`; `just test` opts out with `--no-cov`)
 - `just format` / `just format-check`, `just lint` / `just lint-check`, `just typecheck`
