@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanning with `-e s` and `-e S` is roughly 1.75x and 2x faster. (#50)
 - Input files are memory-mapped and scanned one at a time, so memory use no longer grows with file size or file count. (#53)
 
+### Fixed
+
+- `-e S` writes bytes 0x80-0xFF as the raw bytes found, as GNU `strings` does, rather than UTF-8-encoding them. (#61)
+
 ## [0.1.0] - 2026-09-11
 
 ### Added
