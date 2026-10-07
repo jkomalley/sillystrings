@@ -99,8 +99,8 @@ def test_multiple_files(tmp_path: Path) -> None:
     f2.write_bytes(b"\x00world\x00")
     result = run(str(f1), str(f2))
     assert result.returncode == 0
-    assert b"a.bin" in result.stdout
-    assert b"b.bin" in result.stdout
+    # No filenames without -f, however many files, as in GNU strings (#62)
+    assert result.stdout == b"hello\nworld\n"
 
 
 def test_print_file_name(tmp_path: Path) -> None:
@@ -353,18 +353,46 @@ class TestMain:
         assert exc_info.value.code == 1
         assert "No such file" in capsys.readouterr().err
 
-    def test_multiple_files_prefix(
+    def test_multiple_files_no_prefix_without_flag(
         self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
     ) -> None:
+        # GNU strings prints filenames only with -f, however many files (#62)
         f1 = tmp_path / "a.bin"
         f2 = tmp_path / "b.bin"
         f1.write_bytes(b"\x00hello\x00")
         f2.write_bytes(b"\x00world\x00")
         mocker.patch("sys.argv", ["sillystrings", str(f1), str(f2)])
         main()
-        out = capsys.readouterr().out
-        assert "a.bin:" in out
-        assert "b.bin:" in out
+        assert capsys.readouterr().out.splitlines() == ["hello", "world"]
+
+    def test_multiple_files_prefix_with_flag(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        f1 = tmp_path / "a.bin"
+        f2 = tmp_path / "b.bin"
+        f1.write_bytes(b"\x00hello\x00")
+        f2.write_bytes(b"\x00world\x00")
+        mocker.patch("sys.argv", ["sillystrings", "-f", str(f1), str(f2)])
+        main()
+        assert capsys.readouterr().out.splitlines() == [
+            f"{f1}: hello",
+            f"{f2}: world",
+        ]
+
+    def test_stdin_is_named_with_flag(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"\x00hello\x00")
+        fake_stdin = mocker.Mock()
+        fake_stdin.buffer = BytesIO(b"\x00world\x00")
+        mocker.patch("sys.stdin", fake_stdin)
+        mocker.patch("sys.argv", ["sillystrings", "-f", str(f), "-"])
+        main()
+        assert capsys.readouterr().out.splitlines() == [
+            f"{f}: hello",
+            "{standard input}: world",
+        ]
 
     def test_print_file_name_flag(
         self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
@@ -437,8 +465,8 @@ class TestMain:
         mocker.patch("sys.argv", ["sillystrings", "-t", "d", str(f1), str(f2)])
         main()
         assert capsys.readouterr().out.splitlines() == [
-            f"{f1}:       1 hello",
-            f"{f2}:       2 world",
+            "      1 hello",
+            "      2 world",
         ]
 
     def test_whitespace_passthrough(
@@ -563,7 +591,7 @@ class TestDataSections:
     ) -> None:
         other = tmp_path / "t.bin"
         other.write_bytes(b"\x00hello\x00")
-        out = self.run_main(mocker, capsys, "-d", str(macho), str(other))
+        out = self.run_main(mocker, capsys, "-d", "-f", str(macho), str(other))
         assert out.splitlines() == [
             f"{macho}: code",
             f"{macho}: abcd",
@@ -600,7 +628,7 @@ class TestOpenSource:
         fake_stdin.buffer = BytesIO(b"hello")
         mocker.patch("sys.stdin", fake_stdin)
         with open_source("-") as source:
-            assert source.name == "<stdin>"
+            assert source.name == "{standard input}"
             assert source.data == b"hello"
 
 
