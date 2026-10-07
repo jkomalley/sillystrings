@@ -5,13 +5,23 @@ import pytest
 from sillystrings.formats.common import Section
 from sillystrings.formats.macho import data_sections
 
-from .conftest import MachOSection, build_macho
-
-S_ZEROFILL = 0x1
-S_GB_ZEROFILL = 0xC
-S_THREAD_LOCAL_ZEROFILL = 0x12
-S_ATTR_DEBUG = 0x02000000
-S_ATTR_PURE_INSTRUCTIONS = 0x80000000
+from .conftest import (
+    LC_SEGMENT,
+    MACH_HEADER_64,
+    MH_MAGIC,
+    MH_OBJECT,
+    S_ATTR_DEBUG,
+    S_ATTR_PURE_INSTRUCTIONS,
+    S_GB_ZEROFILL,
+    S_THREAD_LOCAL_ZEROFILL,
+    S_ZEROFILL,
+    SECTION_64,
+    SEGMENT_COMMAND_64,
+    MachOSection,
+    build_macho,
+    offsetof,
+    sizeof,
+)
 
 # Every word size and byte order, as (is_64, big_endian)
 VARIANTS = [(True, False), (True, True), (False, False), (False, True)]
@@ -128,28 +138,33 @@ class TestDataSections:
             assert data_sections(view) == data_sections(data)
 
 
+CPU_TYPE_POWERPC = 18  # mach/machine.h: #define CPU_TYPE_POWERPC ((cpu_type_t) 18)
+FAT_MAGIC = 0xCAFEBABE  # mach-o/fat.h: #define FAT_MAGIC 0xcafebabe
+FAT_MAGIC_64 = 0xCAFEBABF  # mach-o/fat.h: #define FAT_MAGIC_64 0xcafebabf
+
+
 def test_hand_assembled_big_endian_32_bit_object() -> None:
-    # Byte by byte from the offsets documented in <mach-o/loader.h>, sharing
-    # nothing with build_macho or the parser: a PowerPC MH_OBJECT with one
-    # LC_SEGMENT holding (__TEXT,__cstring)
+    # Byte by byte at offsets read off <mach-o/loader.h>, sharing nothing with
+    # build_macho or the parser: a PowerPC MH_OBJECT with one LC_SEGMENT
+    # holding (__TEXT,__cstring). GNU objdump reads these bytes the same way.
     data = bytearray(162)
     put = struct.pack_into
-    # mach_header: magic, cputype (POWERPC), filetype (MH_OBJECT), ncmds,
-    # sizeofcmds
-    put(">I", data, 0, 0xFEEDFACE)
-    put(">I", data, 4, 18)
-    put(">I", data, 12, 0x1)
-    put(">I", data, 16, 1)
-    put(">I", data, 20, 124)
-    # segment_command at 28: cmd (LC_SEGMENT), cmdsize, nsects
-    put(">I", data, 28, 0x1)
-    put(">I", data, 32, 124)
-    put(">I", data, 28 + 48, 1)
-    # section at 84: sectname, segname, size, offset
-    put("16s", data, 84, b"__cstring")
-    put("16s", data, 84 + 16, b"__TEXT")
-    put(">I", data, 84 + 36, 10)
-    put(">I", data, 84 + 40, 152)
+    # struct mach_header at 0 (28 bytes: seven 4-byte fields)
+    put(">I", data, 0, MH_MAGIC)  # magic
+    put(">i", data, 4, CPU_TYPE_POWERPC)  # cputype
+    put(">I", data, 12, MH_OBJECT)  # filetype
+    put(">I", data, 16, 1)  # ncmds
+    put(">I", data, 20, 56 + 68)  # sizeofcmds: one segment, one section
+    # struct segment_command at 28 (56 bytes)
+    put(">I", data, 28 + 0, LC_SEGMENT)  # cmd
+    put(">I", data, 28 + 4, 56 + 68)  # cmdsize
+    put(">I", data, 28 + 48, 1)  # nsects, after cmd..cmdsize (8),
+    # segname (16), vmaddr..filesize (16) and maxprot..initprot (8)
+    # struct section at 28 + 56 = 84 (68 bytes)
+    put("16s", data, 84 + 0, b"__cstring")  # sectname
+    put("16s", data, 84 + 16, b"__TEXT")  # segname
+    put(">I", data, 84 + 36, 10)  # size, after addr at 32
+    put(">I", data, 84 + 40, 152)  # offset: the bytes after the section
     data[152:162] = b"hello ppc\0"
     assert data_sections(bytes(data)) == [Section("__TEXT,__cstring", 152, 10)]
 
@@ -164,10 +179,10 @@ class TestNotMachO:
             b"\x7fELF\x02\x01\x01" + bytes(57),
             b"!<arch>\n" + bytes(60),
             # Fat files are archives to BFD, so GNU -d scans them whole
-            struct.pack(">II", 0xCAFEBABE, 1) + bytes(20),
-            struct.pack(">II", 0xCAFEBABF, 1) + bytes(32),
+            struct.pack(">II", FAT_MAGIC, 1) + bytes(20),
+            struct.pack(">II", FAT_MAGIC_64, 1) + bytes(32),
             # A Java class file shares the fat magic
-            struct.pack(">IHH", 0xCAFEBABE, 0, 65) + bytes(16),
+            struct.pack(">IHH", FAT_MAGIC, 0, 65) + bytes(16),
         ],
     )
     def test_is_none(self, data: bytes) -> None:
@@ -180,13 +195,18 @@ def _patch(data: bytes, offset: int, value: int) -> bytes:
     return bytes(patched)
 
 
-# 64-bit little-endian offsets of the fields these tests corrupt
-NCMDS, SIZEOFCMDS = 16, 20
-CMDSIZE = 32 + 4
-NSECTS = 32 + 64
-SECTION = 32 + 72
-SECTION_SIZE = SECTION + 40
-SECTION_OFFSET = SECTION + 48
+# Where the fields these tests corrupt sit in the fixture below: a 64-bit
+# header, then one segment command and its first section
+SEGMENT = sizeof(MACH_HEADER_64)
+SECTION = SEGMENT + sizeof(SEGMENT_COMMAND_64)
+NCMDS = offsetof(MACH_HEADER_64, "ncmds")
+SIZEOFCMDS = offsetof(MACH_HEADER_64, "sizeofcmds")
+CMDSIZE = SEGMENT + offsetof(SEGMENT_COMMAND_64, "cmdsize")
+NSECTS = SEGMENT + offsetof(SEGMENT_COMMAND_64, "nsects")
+SECTION_SIZE = SECTION + offsetof(SECTION_64, "size")
+SECTION_OFFSET = SECTION + offsetof(SECTION_64, "offset")
+# The fixture's segment command, with both of its sections
+SEGMENT_CMDSIZE = sizeof(SEGMENT_COMMAND_64) + 2 * sizeof(SECTION_64)
 
 
 class TestMalformed:
@@ -225,9 +245,9 @@ class TestMalformed:
             (NCMDS, 2),  # more commands than sizeofcmds holds
             (NCMDS, 0xFFFFFFFF),
             (CMDSIZE, 0),  # would never advance
-            (CMDSIZE, 7),
-            (CMDSIZE, 71),  # too small for a segment header
-            (CMDSIZE, 72 + 80 * 2 + 8),  # past the end of the load commands
+            (CMDSIZE, 7),  # smaller than a load_command
+            (CMDSIZE, sizeof(SEGMENT_COMMAND_64) - 1),  # cut into the segment
+            (CMDSIZE, SEGMENT_CMDSIZE + 8),  # past the end of the load commands
             (NSECTS, 3),  # more sections than the command holds
             (NSECTS, 0xFFFFFFFF),
         ],
