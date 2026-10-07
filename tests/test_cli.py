@@ -3,7 +3,7 @@ import argparse
 import os
 import subprocess
 import sys
-from io import BytesIO
+from io import BytesIO, UnsupportedOperation
 from pathlib import Path
 
 import pytest
@@ -123,6 +123,13 @@ def test_encoding_flag(tmp_path: Path) -> None:
     f.write_bytes(b"\x00" + bytes(range(0x80, 0x85)) + b"\x00")
     assert run(str(f), "-e", "S", "-n", "4").stdout.strip() != b""
     assert run(str(f), "-e", "s", "-n", "4").stdout.strip() == b""
+
+
+def test_8bit_strings_are_written_as_their_bytes() -> None:
+    # Not re-encoded with the locale's encoding, which under UTF-8 would write
+    # each byte from 0x80 up as two bytes (#60)
+    result = run("-e", "S", data=b"ab\x80\x81cd\x00")
+    assert result.stdout == b"ab\x80\x81cd\n"
 
 
 def test_utf32_encoding_flag(tmp_path: Path) -> None:
@@ -310,6 +317,7 @@ class TestBuildParser:
 
 
 Capture = pytest.CaptureFixture[str]
+BinaryCapture = pytest.CaptureFixture[bytes]
 
 
 class TestMain:
@@ -386,13 +394,14 @@ class TestMain:
         assert "3 hello" in capsys.readouterr().out
 
     def test_encoding_passthrough(
-        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+        self, tmp_path: Path, mocker: MockerFixture, capsysbinary: BinaryCapture
     ) -> None:
         f = tmp_path / "t.bin"
         f.write_bytes(b"\x00" + bytes(range(0x80, 0x85)) + b"\x00")
         mocker.patch("sys.argv", ["sillystrings", "-e", "S", "-n", "4", str(f)])
         main()
-        assert capsys.readouterr().out.strip() != ""
+        # The bytes as found, not re-encoded in the locale's encoding (#60)
+        assert capsysbinary.readouterr().out == bytes(range(0x80, 0x85)) + b"\n"
 
     def test_empty_file(
         self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
@@ -442,6 +451,33 @@ class TestMain:
         out = capsys.readouterr().out
         # With -w: one string starting at offset 1 (not two separate strings)
         assert "7 world" not in out
+
+    def test_non_ascii_file_name_is_written_as_given(
+        self, tmp_path: Path, mocker: MockerFixture, capsysbinary: BinaryCapture
+    ) -> None:
+        # The name is the bytes it was given as, not Latin-1 like the string
+        f = tmp_path / "caf\u00e9.bin"
+        f.write_bytes(b"\x00hell\xf6\x00")
+        mocker.patch("sys.argv", ["sillystrings", "-f", "-e", "S", str(f)])
+        main()
+        assert capsysbinary.readouterr().out == os.fsencode(f) + b": hell\xf6\n"
+
+    def test_each_string_is_flushed_when_stdout_is_line_buffered(
+        self, tmp_path: Path, mocker: MockerFixture
+    ) -> None:
+        # As print() would on a terminal, where stdout is line-buffered
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"\x00hello\x00world\x00")
+        stdout = mocker.patch("sys.stdout")
+        stdout.line_buffering = True
+        mocker.patch("sys.argv", ["sillystrings", str(f)])
+        main()
+        assert stdout.buffer.mock_calls == [
+            mocker.call.write(b"hello\n"),
+            mocker.call.flush(),
+            mocker.call.write(b"world\n"),
+            mocker.call.flush(),
+        ]
 
 
 # A Mach-O object whose two data sections sit back to back, with a code
@@ -575,6 +611,17 @@ def test_positive_int_rejects_non_positive(value: str) -> None:
 
 
 class TestBrokenPipe:
+    @staticmethod
+    def close_pipe(mocker: MockerFixture) -> None:
+        # Writing a string raises, as on a pipe whose reader has gone. Like
+        # capsys's stream, this stdout has no fd, so the devnull rebinding is
+        # suppressed -- there is no real pipe to protect in that case. Called
+        # in the test body: capsys reinstalls its own stdout after fixtures.
+        stdout = mocker.patch("sys.stdout")
+        stdout.line_buffering = False
+        stdout.buffer.write.side_effect = BrokenPipeError
+        stdout.fileno.side_effect = UnsupportedOperation
+
     # Both scan paths, since the pipe closes while the file is still mapped: a
     # view the scanner kept alive would make releasing the mapping raise
     # BufferError over the BrokenPipeError
@@ -593,14 +640,12 @@ class TestBrokenPipe:
         text = "hello world\x00second string here\x00"
         f.write_bytes(text.encode("ascii" if encoding == "s" else "utf-16-le"))
         mocker.patch.object(sys, "argv", ["sillystrings", "-e", encoding, str(f)])
-        mocker.patch("builtins.print", side_effect=BrokenPipeError)
+        self.close_pipe(mocker)
 
         with pytest.raises(SystemExit) as exc:
             main()
 
-        # Exits 1 like coreutils rather than surfacing a traceback. Under
-        # capsys stdout has no fileno, so the devnull rebinding is suppressed
-        # -- there is no real pipe to protect in that case.
+        # Exits 1 like coreutils rather than surfacing a traceback
         assert exc.value.code == 1
         assert capsys.readouterr().err == ""
 
@@ -615,7 +660,7 @@ class TestBrokenPipe:
         f.write_bytes(build_macho([("", [MachOSection("__DATA", "__data", content)])]))
         encoding = "s" if codec == "ascii" else "l"
         mocker.patch.object(sys, "argv", ["sillystrings", "-d", "-e", encoding, str(f)])
-        mocker.patch("builtins.print", side_effect=BrokenPipeError)
+        self.close_pipe(mocker)
 
         with pytest.raises(SystemExit) as exc:
             main()
