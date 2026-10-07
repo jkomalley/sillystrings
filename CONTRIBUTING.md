@@ -117,10 +117,7 @@ uv run scripts/compare_gnu.py --gnu /path/to/strings -n 8 file.o
 ```
 
 It runs both tools with `-d` and with `-a`, at `-t d`, and prints a table; it
-exits 1 if anything differs. GNU counts tab as printable and `sillystrings`
-does not, so the script splits GNU's strings on tabs before comparing (the
-script's docstring explains why that is exact); the "raw" column shows the
-unnormalized result.
+exits 1 if any output differs.
 
 The structs and constants are checked separately, against the real system
 headers: `tests/test_macho_constants.py` and `tests/test_elf_constants.py` each
