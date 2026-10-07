@@ -259,8 +259,6 @@ def _run() -> None:
             print(f"sillystrings: {name}: No such file", file=sys.stderr)
             sys.exit(1)
 
-    multiple: bool = len(names) > 1
-
     # Strings are written as bytes rather than printed, so each one is output
     # as exactly the bytes it was found as. An -e S string holds bytes
     # 0x80-0xFF as Latin-1 code points, which print() would encode with the
@@ -275,13 +273,10 @@ def _run() -> None:
     # number of files
     for name in names:
         with open_source(name) as source, memoryview(source.data) as view:
-            # The name as the bytes it was given as, like GNU strings: a name
-            # that is not valid in the locale's encoding still round-trips
-            prefix = (
-                os.fsencode(source.name) + b": "
-                if (multiple or args.print_file_name)
-                else b""
-            )
+            # Only with -f, even for several files: GNU strings never prefixes
+            # on its own. The name is the bytes it was given as, like GNU
+            # strings, so one not valid in the locale's encoding round-trips.
+            prefix = os.fsencode(source.name) + b": " if args.print_file_name else b""
             # GNU strings ignores -d for stdin and scans the stream whole
             data_only = args.data_only and name != "-"
             for start, size in _ranges(view, data_only=data_only):
