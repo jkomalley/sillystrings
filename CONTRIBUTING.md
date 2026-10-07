@@ -34,6 +34,7 @@ responsibility:
 | --- | --- |
 | `encodings.py` | The encoding vocabulary (`Encoding`, `ASCII_ENCODINGS`, `WIDE_ENCODINGS`), the per-byte printability predicates, and `iter_chars` — which walks a buffer yielding `(offset, printable)`. |
 | `scanner.py` | `scan()` — the public API. Dispatches to the `_scan_ascii` / `_scan_wide` accumulators, which group runs of printable characters into strings meeting the minimum length. |
+| `formats/` | Object file parsers for `-d`. `formats/__init__.py` has `data_ranges()`, which tries each format in turn; `formats/macho.py` finds a Mach-O file's data sections; `formats/common.py` holds the shared `Section` record. |
 | `cli.py` | The `sillystrings` command-line entry point: argparse wiring, offset formatting, and stdin/file input handling. |
 | `__version__.py` | The installed version, read from package metadata. |
 
@@ -90,6 +91,10 @@ you'd rather not install `just`.
   are encoded for the target encoding, `int` segments become that many NUL
   characters, and `bytes` segments are appended raw — which is how to construct
   odd-length or deliberately malformed buffers.
+- Build object files with `build_macho` from `tests/conftest.py`, which writes a
+  thin Mach-O file of any word size and byte order from a list of segments and
+  `MachOSection`s. There are no binary fixtures; corrupt a field with
+  `struct.pack_into` to test a malformed file.
 - CLI tests come in two layers: subprocess smoke tests through the `run` helper,
   which confirm the installed entry point works, and in-process tests that call
   `cli.py` directly. Only the second layer is visible to coverage, so a new
