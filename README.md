@@ -34,7 +34,7 @@ With no file arguments, reads from stdin.
 | `-o` | Same as `-t o` |
 | `-a`, `--all` | Scan the whole file (the default) |
 | `-d`, `--data` | Scan only the data sections of an object file; see below |
-| `-w` | Include all whitespace characters (newlines, carriage returns) in strings |
+| `-w` | Also include newlines, vertical tabs, form feeds, and carriage returns in strings (tab and space always are) |
 | `-f` | Print the filename before each string |
 | `-v` | Show version and exit |
 
