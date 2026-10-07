@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-d`/`--data` to scan only the data sections of a thin Mach-O file, and
   `-a`/`--all` to scan the whole file (still the default), matching GNU
   `strings`. (#54)
+- `-d` also scans the data sections of ELF files, 32- and 64-bit in either byte
+  order. (#57)
 
 ### Changed
 

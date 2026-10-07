@@ -176,9 +176,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Only scan the sections of an object file that are loaded into"
             " memory from the file, as GNU strings -d does: code and data, but"
-            " not debug info or zero-filled sections. Thin Mach-O files are"
-            " recognized. Any other file, including a fat Mach-O file, or one"
-            " with no such sections, is scanned whole."
+            " not debug info or zero-filled sections. Thin Mach-O and ELF files"
+            " are recognized. Any other file is scanned whole, as are fat Mach-O"
+            " files, ELF core dumps and ELF files without section headers, and"
+            " objects with no such sections."
         ),
     )
     parser.add_argument(

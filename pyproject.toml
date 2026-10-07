@@ -101,6 +101,9 @@ convention = "google"
 "tests/test_macho_constants.py" = [
     "S603",   # subprocess runs cc, and the program it builds -- not untrusted input
 ]
+"tests/test_elf_constants.py" = [
+    "S603",   # subprocess runs cc, and the program it builds -- not untrusted input
+]
 "scripts/**/*.py" = [
     "T201",   # print() is how a developer script reports progress
     "S603",   # subprocess with a fixed, hardcoded argv -- not untrusted input

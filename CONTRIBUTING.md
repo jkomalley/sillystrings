@@ -34,7 +34,7 @@ responsibility:
 | --- | --- |
 | `encodings.py` | The encoding vocabulary (`Encoding`, `ASCII_ENCODINGS`, `WIDE_ENCODINGS`), the per-byte printability predicate, `iter_chars` — which walks an ASCII-encoded buffer yielding `(offset, printable)` — and `wide_string_pattern`, the regex the wide encodings are matched with. |
 | `scanner.py` | `scan()` — the public API. Dispatches to `_scan_ascii`, which groups runs of printable bytes into strings meeting the minimum length, or `_scan_wide`, which yields each regex match. |
-| `formats/` | Object file parsers for `-d`. `formats/__init__.py` has `data_ranges()`, which tries each format in turn; `formats/macho.py` finds a Mach-O file's data sections; `formats/common.py` holds the shared `Section` record. |
+| `formats/` | Object file parsers for `-d`. `formats/__init__.py` has `data_ranges()`, which tries each format in turn; `formats/macho.py` and `formats/elf.py` find a Mach-O or ELF file's data sections; `formats/common.py` holds the shared `Section` record and the `sizeof`/`unpack` struct helpers. |
 | `cli.py` | The `sillystrings` command-line entry point: argparse wiring, offset formatting, and stdin/file input handling. |
 | `__version__.py` | The installed version, read from package metadata. |
 
@@ -91,10 +91,13 @@ you'd rather not install `just`.
   are encoded for the target encoding, `int` segments become that many NUL
   characters, and `bytes` segments are appended raw — which is how to construct
   odd-length or deliberately malformed buffers.
-- Build object files with `build_macho` from `tests/conftest.py`, which writes a
-  thin Mach-O file of any word size and byte order from a list of segments and
-  `MachOSection`s. There are no binary fixtures; corrupt a field with
-  `struct.pack_into` to test a malformed file.
+- Build object files with `build_macho` and `build_elf` from `tests/conftest.py`,
+  which write a thin Mach-O file from a list of segments and `MachOSection`s, or
+  an ELF file from a list of `ElfSection`s, in any word size and byte order. Both
+  pack each struct from a field-by-field transcription of the system header
+  (`<mach-o/loader.h>`, `<elf.h>`), sharing nothing with the parsers. There are
+  no binary fixtures; corrupt a field with `struct.pack_into` to test a
+  malformed file.
 - CLI tests come in two layers: subprocess smoke tests through the `run` helper,
   which confirm the installed entry point works, and in-process tests that call
   `cli.py` directly. Only the second layer is visible to coverage, so a new
@@ -104,9 +107,9 @@ you'd rather not install `just`.
 
 `-d` is meant to scan exactly the sections GNU `strings -d` scans, so changes
 to a format parser should be checked against GNU itself. On macOS,
-`brew install binutils` gives a GNU `strings` that reads Mach-O (keg-only, so
-it doesn't shadow the system `strings`). Then run the comparison on any
-binaries you like:
+`brew install binutils` gives a GNU `strings` that reads Mach-O and ELF
+(keg-only, so it doesn't shadow the system `strings`); on Linux, the distro's
+`strings` reads ELF. Then run the comparison on any binaries you like:
 
 ```bash
 uv run scripts/compare_gnu.py /bin/ls build/foo.o some.dylib
@@ -117,11 +120,14 @@ uv run scripts/compare_gnu.py -e l -e b -e L -e B /bin/ls
 It runs both tools with `-d` and with `-a`, at `-t d`, in each encoding given
 with `-e` (default `s`), and prints a table; it exits 1 if any output differs.
 
-The Mach-O structs and constants are checked separately, against the real
-`<mach-o/loader.h>`: `tests/test_macho_constants.py` compiles a C program that
-prints every `offsetof`, `sizeof` and constant, and compares them with both the
-parser's and `build_macho`'s definitions. It runs on any Mac with a C compiler
-and is skipped elsewhere.
+The structs and constants are checked separately, against the real system
+headers: `tests/test_macho_constants.py` and `tests/test_elf_constants.py` each
+compile a C program that prints every `offsetof`, `sizeof` and constant, and
+compare them with both the parser's and the builder's definitions. The Mach-O
+test needs `<mach-o/loader.h>`, so it runs on any Mac with a C compiler; the
+ELF test needs glibc's `<elf.h>`, so it runs on Linux, including CI. Each is
+skipped where its header is missing. To run the ELF one from a Mac, use a Linux
+VM or container with `gcc` and `uv`.
 
 ## Pull requests
 
