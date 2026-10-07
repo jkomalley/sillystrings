@@ -57,7 +57,7 @@ def open_source(name: str) -> Iterator[Source]:
     """
     if name == "-":
         # stdin may be a pipe, which cannot be mapped
-        yield Source("<stdin>", sys.stdin.buffer.read())
+        yield Source("{standard input}", sys.stdin.buffer.read())
         return
     with Path(name).open("rb") as f:
         if os.fstat(f.fileno()).st_size == 0:

@@ -391,7 +391,7 @@ class TestMain:
         main()
         assert capsys.readouterr().out.splitlines() == [
             f"{f}: hello",
-            "<stdin>: world",
+            "{standard input}: world",
         ]
 
     def test_print_file_name_flag(
@@ -628,7 +628,7 @@ class TestOpenSource:
         fake_stdin.buffer = BytesIO(b"hello")
         mocker.patch("sys.stdin", fake_stdin)
         with open_source("-") as source:
-            assert source.name == "<stdin>"
+            assert source.name == "{standard input}"
             assert source.data == b"hello"
 
 
