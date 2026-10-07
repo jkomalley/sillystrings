@@ -148,6 +148,13 @@ def test_whitespace_flag(tmp_path: Path) -> None:
     assert b"7 world" not in with_w.stdout
 
 
+def test_tab_does_not_split_string() -> None:
+    # GNU strings treats tab as printable even without -w (#55)
+    result = run(data=b"abcd\tefgh\x00")
+    assert result.returncode == 0
+    assert result.stdout == b"abcd\tefgh\n"
+
+
 def test_version() -> None:
     result = run("-v")
     assert result.returncode == 0

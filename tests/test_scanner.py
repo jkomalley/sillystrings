@@ -78,16 +78,22 @@ class TestScanner:
             (["hel\nlo"], "s", 4, True, [(0, "hel\nlo")]),
             # carriage return extends a run
             (["hel\rlo"], "s", 4, True, [(0, "hel\rlo")]),
-            # tab breaks a run when flag is off
-            (["hel\tlo"], "s", 4, False, []),
+            # tab extends a run when flag is off too, as in GNU
+            (["hel\tlo"], "s", 4, False, [(0, "hel\tlo")]),
+            # vertical tab and form feed extend a run with the flag
+            (["hel\vlo"], "s", 4, True, [(0, "hel\vlo")]),
+            (["hel\flo"], "s", 4, True, [(0, "hel\flo")]),
+            # ... and split it without
+            (["hello\vworld"], "s", 4, False, [(0, "hello"), (6, "world")]),
+            (["hello\fworld"], "s", 4, False, [(0, "hello"), (6, "world")]),
             # leading tab included in run
             (["\thello"], "s", 4, True, [(0, "\thello")]),
             # tab between two strings — merges them into one run
             (["hello\tworld"], "s", 4, True, [(0, "hello\tworld")]),
-            # tab between two strings — splits them when flag off
-            (["hello\tworld"], "s", 4, False, [(0, "hello"), (6, "world")]),
+            # tab between two strings — merges them when flag off too
+            (["hello\tworld"], "s", 4, False, [(0, "hello\tworld")]),
             # multiple whitespace types in one run
-            (["hi\t\n\r there"], "s", 4, True, [(0, "hi\t\n\r there")]),
+            (["hi\t\n\v\f\r there"], "s", 4, True, [(0, "hi\t\n\v\f\r there")]),
             # -----------------------------------------------------------------------
             # encoding='S' — 8-bit extended ASCII
             # -----------------------------------------------------------------------
@@ -117,6 +123,11 @@ class TestScanner:
             ),
             # tab extends run in S mode with include_ws
             ([b"hel\x09lo"], "S", 4, True, [(0, b"hel\x09lo".decode("latin-1"))]),
+            # ... and without it
+            ([b"hel\x09lo"], "S", 4, False, [(0, b"hel\x09lo".decode("latin-1"))]),
+            # vertical tab and form feed extend a run only with the flag
+            ([b"hel\x0blo"], "S", 4, True, [(0, b"hel\x0blo".decode("latin-1"))]),
+            ([b"hel\x0clo"], "S", 4, False, []),
             # -----------------------------------------------------------------------
             # encoding='l' — UTF-16 little-endian
             # -----------------------------------------------------------------------
@@ -146,12 +157,17 @@ class TestScanner:
             ),
             # tab extends run
             (["hel\tlo"], "l", 4, True, [(0, "hel\tlo")]),
-            # tab breaks run when flag off
-            (["hel\tlo"], "l", 4, False, []),
+            # tab extends run when flag off too
+            (["hel\tlo"], "l", 4, False, [(0, "hel\tlo")]),
+            # vertical tab and form feed extend run only with the flag
+            (["hel\vlo"], "l", 4, True, [(0, "hel\vlo")]),
+            (["hel\flo"], "l", 4, True, [(0, "hel\flo")]),
+            (["hello\vworld"], "l", 4, False, [(0, "hello"), (12, "world")]),
+            (["hello\fworld"], "l", 4, False, [(0, "hello"), (12, "world")]),
             # tab between two strings — merges them
             (["hello\tworld"], "l", 4, True, [(0, "hello\tworld")]),
-            # tab between two strings — splits them
-            (["hello\tworld"], "l", 4, False, [(0, "hello"), (12, "world")]),
+            # tab between two strings — merges them when flag off too
+            (["hello\tworld"], "l", 4, False, [(0, "hello\tworld")]),
             # odd trailing byte — silently ignored, string still extracted
             (["hello", b"\x41"], "l", 4, False, [(0, "hello")]),
             # -----------------------------------------------------------------------
@@ -183,12 +199,17 @@ class TestScanner:
             ),
             # tab extends run
             (["hel\tlo"], "b", 4, True, [(0, "hel\tlo")]),
-            # tab breaks run when flag off
-            (["hel\tlo"], "b", 4, False, []),
+            # tab extends run when flag off too
+            (["hel\tlo"], "b", 4, False, [(0, "hel\tlo")]),
+            # vertical tab and form feed extend run only with the flag
+            (["hel\vlo"], "b", 4, True, [(0, "hel\vlo")]),
+            (["hel\flo"], "b", 4, True, [(0, "hel\flo")]),
+            (["hello\vworld"], "b", 4, False, [(0, "hello"), (12, "world")]),
+            (["hello\fworld"], "b", 4, False, [(0, "hello"), (12, "world")]),
             # tab between two strings — merges them
             (["hello\tworld"], "b", 4, True, [(0, "hello\tworld")]),
-            # tab between two strings — splits them
-            (["hello\tworld"], "b", 4, False, [(0, "hello"), (12, "world")]),
+            # tab between two strings — merges them when flag off too
+            (["hello\tworld"], "b", 4, False, [(0, "hello\tworld")]),
             # -----------------------------------------------------------------------
             # encoding='L' — 32-bit little-endian
             # -----------------------------------------------------------------------
@@ -218,12 +239,17 @@ class TestScanner:
             ),
             # tab extends run
             (["hel\tlo"], "L", 4, True, [(0, "hel\tlo")]),
-            # tab breaks run when flag off
-            (["hel\tlo"], "L", 4, False, []),
+            # tab extends run when flag off too
+            (["hel\tlo"], "L", 4, False, [(0, "hel\tlo")]),
+            # vertical tab and form feed extend run only with the flag
+            (["hel\vlo"], "L", 4, True, [(0, "hel\vlo")]),
+            (["hel\flo"], "L", 4, True, [(0, "hel\flo")]),
+            (["hello\vworld"], "L", 4, False, [(0, "hello"), (24, "world")]),
+            (["hello\fworld"], "L", 4, False, [(0, "hello"), (24, "world")]),
             # tab between two strings — merges them
             (["hello\tworld"], "L", 4, True, [(0, "hello\tworld")]),
-            # tab between two strings — splits them
-            (["hello\tworld"], "L", 4, False, [(0, "hello"), (24, "world")]),
+            # tab between two strings — merges them when flag off too
+            (["hello\tworld"], "L", 4, False, [(0, "hello\tworld")]),
             # trailing partial character — silently ignored, string still extracted
             (["hello", b"\x41\x00\x00"], "L", 4, False, [(0, "hello")]),
             # character beyond 16 bits breaks a run
@@ -263,12 +289,17 @@ class TestScanner:
             ),
             # tab extends run
             (["hel\tlo"], "B", 4, True, [(0, "hel\tlo")]),
-            # tab breaks run when flag off
-            (["hel\tlo"], "B", 4, False, []),
+            # tab extends run when flag off too
+            (["hel\tlo"], "B", 4, False, [(0, "hel\tlo")]),
+            # vertical tab and form feed extend run only with the flag
+            (["hel\vlo"], "B", 4, True, [(0, "hel\vlo")]),
+            (["hel\flo"], "B", 4, True, [(0, "hel\flo")]),
+            (["hello\vworld"], "B", 4, False, [(0, "hello"), (24, "world")]),
+            (["hello\fworld"], "B", 4, False, [(0, "hello"), (24, "world")]),
             # tab between two strings — merges them
             (["hello\tworld"], "B", 4, True, [(0, "hello\tworld")]),
-            # tab between two strings — splits them
-            (["hello\tworld"], "B", 4, False, [(0, "hello"), (24, "world")]),
+            # tab between two strings — merges them when flag off too
+            (["hello\tworld"], "B", 4, False, [(0, "hello\tworld")]),
         ],
     )
     def test_scan(
