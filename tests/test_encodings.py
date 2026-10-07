@@ -12,10 +12,11 @@ class TestIsPrintableAscii:
             # below range
             (0x00, "s", False, False),  # null
             (0x08, "s", False, False),  # backspace
-            (0x09, "s", False, False),  # \t — whitespace flag off
+            (0x09, "s", False, True),  # \t — printable by default, as in GNU
             (0x0A, "s", False, False),  # \n — whitespace flag off
             (0x0D, "s", False, False),  # \r — whitespace flag off
-            (0x0B, "s", False, False),  # \v — not in whitespace set
+            (0x0B, "s", False, False),  # \v — whitespace flag off
+            (0x0C, "s", False, False),  # \f — whitespace flag off
             (0x1F, "s", False, False),  # one below lower boundary
             # lower boundary
             (0x20, "s", False, True),  # space — first printable
@@ -30,12 +31,12 @@ class TestIsPrintableAscii:
             (0x80, "s", False, False),  # first high byte — excluded in 's' mode
             (0xFF, "s", False, False),  # max byte — excluded in 's' mode
             # --- encoding='s', include_ws=True ---
-            (0x09, "s", True, True),  # \t — now included
+            (0x09, "s", True, True),  # \t — printable either way
             (0x0A, "s", True, True),  # \n — now included
             (0x0D, "s", True, True),  # \r — now included
-            # \v — not in the whitespace set {0x09, 0x0A, 0x0D}
-            (0x0B, "s", True, False),
-            (0x0C, "s", True, False),  # \f — not in the whitespace set
+            (0x0B, "s", True, True),  # \v — now included
+            (0x0C, "s", True, True),  # \f — now included
+            (0x0E, "s", True, False),  # one above \r — not whitespace
             (0x08, "s", True, False),  # backspace — not in the whitespace set
             (0x1F, "s", True, False),  # still below range and not a ws char
             (0x20, "s", True, True),  # space — covered by the range, not the ws check
@@ -52,13 +53,16 @@ class TestIsPrintableAscii:
             (0xA0, "S", False, True),  # mid high range
             (0xFE, "S", False, True),  # one below max
             (0xFF, "S", False, True),  # max byte — included in 'S' mode
-            (0x09, "S", False, False),  # \t — whitespace flag off
+            (0x09, "S", False, True),  # \t — printable by default
             (0x0A, "S", False, False),  # \n — whitespace flag off
+            (0x0B, "S", False, False),  # \v — whitespace flag off
+            (0x0C, "S", False, False),  # \f — whitespace flag off
             # --- encoding='S', include_ws=True ---
             (0x09, "S", True, True),  # \t — included
             (0x0A, "S", True, True),  # \n — included
             (0x0D, "S", True, True),  # \r — included
-            (0x0B, "S", True, False),  # \v — not in the whitespace set
+            (0x0B, "S", True, True),  # \v — included
+            (0x0C, "S", True, True),  # \f — included
             # DEL — still excluded even with include_ws and 'S'
             (0x7F, "S", True, False),
             (0x80, "S", True, True),  # high byte still printable
@@ -92,10 +96,11 @@ class TestIsPrintableWide:
             # below range
             (0x0000, False, False),  # null
             (0x0008, False, False),  # backspace
-            (0x0009, False, False),  # \t — whitespace flag off
+            (0x0009, False, True),  # \t — printable by default, as in GNU
             (0x000A, False, False),  # \n — whitespace flag off
             (0x000D, False, False),  # \r — whitespace flag off
-            (0x000B, False, False),  # \v — not in whitespace set
+            (0x000B, False, False),  # \v — whitespace flag off
+            (0x000C, False, False),  # \f — whitespace flag off
             (0x001F, False, False),  # one below lower boundary
             # lower boundary
             (0x0020, False, True),  # space — first printable
@@ -113,12 +118,12 @@ class TestIsPrintableWide:
             (0xD800, False, False),  # high surrogate — not printable
             (0xFFFF, False, False),  # max 16-bit value — not printable
             # --- include_ws=True ---
-            (0x0009, True, True),  # \t — included
+            (0x0009, True, True),  # \t — printable either way
             (0x000A, True, True),  # \n — included
             (0x000D, True, True),  # \r — included
-            # \v — not in whitespace set {0x0009, 0x000A, 0x000D}
-            (0x000B, True, False),
-            (0x000C, True, False),  # \f — not in whitespace set
+            (0x000B, True, True),  # \v — included
+            (0x000C, True, True),  # \f — included
+            (0x000E, True, False),  # one above \r — not whitespace
             (0x0008, True, False),  # backspace — not in whitespace set
             (0x001F, True, False),  # below range and not a ws char
             (0x0020, True, True),  # space — covered by range, not ws check
@@ -173,9 +178,10 @@ class TestIterChars:
             ),
             # --- encoding='s', include_ws=True ---
             (b"\x09\x0a\x0d", "s", True, [(0, True), (1, True), (2, True)]),  # \t \n \r
-            # same, flag off
-            (b"\x09\x0a\x0d", "s", False, [(0, False), (1, False), (2, False)]),
-            (b"\x0b\x0c", "s", True, [(0, False), (1, False)]),  # \v \f — not in ws set
+            # same, flag off — only the tab stays printable
+            (b"\x09\x0a\x0d", "s", False, [(0, True), (1, False), (2, False)]),
+            (b"\x0b\x0c", "s", True, [(0, True), (1, True)]),  # \v \f — included
+            (b"\x0b\x0c", "s", False, [(0, False), (1, False)]),  # same, flag off
             (b"\x09\x41", "s", True, [(0, True), (1, True)]),  # ws char then printable
             # --- encoding='S', include_ws=False ---
             (b"", "S", False, []),
@@ -193,7 +199,7 @@ class TestIterChars:
             # --- encoding='S', include_ws=True ---
             # ws + high byte both printable
             (b"\x09\x80", "S", True, [(0, True), (1, True)]),
-            (b"\x09\x80", "S", False, [(0, False), (1, True)]),  # same, flag off
+            (b"\x09\x80", "S", False, [(0, True), (1, True)]),  # same, flag off
             # --- encoding='l' (UTF-16 LE), include_ws=False ---
             (b"", "l", False, []),
             # "hi" in UTF-16 LE
@@ -210,8 +216,11 @@ class TestIterChars:
             (b"\x68", "l", False, []),
             # --- encoding='l' (UTF-16 LE), include_ws=True ---
             (b"\x09\x00", "l", True, [(0, True)]),  # \t in UTF-16 LE
-            (b"\x09\x00", "l", False, [(0, False)]),  # same, flag off
-            (b"\x0b\x00", "l", True, [(0, False)]),  # \v — not in ws set
+            (b"\x09\x00", "l", False, [(0, True)]),  # same, flag off
+            (b"\x0b\x00", "l", True, [(0, True)]),  # \v — included
+            (b"\x0b\x00", "l", False, [(0, False)]),  # same, flag off
+            (b"\x0c\x00", "l", True, [(0, True)]),  # \f — included
+            (b"\x0c\x00", "l", False, [(0, False)]),  # same, flag off
             # --- encoding='b' (UTF-16 BE), include_ws=False ---
             (b"", "b", False, []),
             # "hi" in UTF-16 BE
@@ -228,8 +237,11 @@ class TestIterChars:
             (b"\x68", "b", False, []),
             # --- encoding='b' (UTF-16 BE), include_ws=True ---
             (b"\x00\x09", "b", True, [(0, True)]),  # \t in UTF-16 BE
-            (b"\x00\x09", "b", False, [(0, False)]),  # same, flag off
-            (b"\x00\x0b", "b", True, [(0, False)]),  # \v — not in ws set
+            (b"\x00\x09", "b", False, [(0, True)]),  # same, flag off
+            (b"\x00\x0b", "b", True, [(0, True)]),  # \v — included
+            (b"\x00\x0b", "b", False, [(0, False)]),  # same, flag off
+            (b"\x00\x0c", "b", True, [(0, True)]),  # \f — included
+            (b"\x00\x0c", "b", False, [(0, False)]),  # same, flag off
             # --- encoding='L' (32-bit LE), include_ws=False ---
             (b"", "L", False, []),
             # "hi" in UTF-32 LE
@@ -249,8 +261,11 @@ class TestIterChars:
             (b"h\x00\x00", "L", False, []),
             # --- encoding='L' (32-bit LE), include_ws=True ---
             (b"\x09\x00\x00\x00", "L", True, [(0, True)]),  # \t in UTF-32 LE
-            (b"\x09\x00\x00\x00", "L", False, [(0, False)]),  # same, flag off
-            (b"\x0b\x00\x00\x00", "L", True, [(0, False)]),  # \v — not in ws set
+            (b"\x09\x00\x00\x00", "L", False, [(0, True)]),  # same, flag off
+            (b"\x0b\x00\x00\x00", "L", True, [(0, True)]),  # \v — included
+            (b"\x0b\x00\x00\x00", "L", False, [(0, False)]),  # same, flag off
+            (b"\x0c\x00\x00\x00", "L", True, [(0, True)]),  # \f — included
+            (b"\x0c\x00\x00\x00", "L", False, [(0, False)]),  # same, flag off
             # --- encoding='B' (32-bit BE), include_ws=False ---
             (b"", "B", False, []),
             # "hi" in UTF-32 BE
@@ -269,8 +284,11 @@ class TestIterChars:
             (b"\x00\x00\x00", "B", False, []),
             # --- encoding='B' (32-bit BE), include_ws=True ---
             (b"\x00\x00\x00\x09", "B", True, [(0, True)]),  # \t in UTF-32 BE
-            (b"\x00\x00\x00\x09", "B", False, [(0, False)]),  # same, flag off
-            (b"\x00\x00\x00\x0b", "B", True, [(0, False)]),  # \v — not in ws set
+            (b"\x00\x00\x00\x09", "B", False, [(0, True)]),  # same, flag off
+            (b"\x00\x00\x00\x0b", "B", True, [(0, True)]),  # \v — included
+            (b"\x00\x00\x00\x0b", "B", False, [(0, False)]),  # same, flag off
+            (b"\x00\x00\x00\x0c", "B", True, [(0, True)]),  # \f — included
+            (b"\x00\x00\x00\x0c", "B", False, [(0, False)]),  # same, flag off
         ],
     )
     def test_iter_chars(
