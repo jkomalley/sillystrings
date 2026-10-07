@@ -19,7 +19,11 @@ class TestDataRanges:
     def test_unrecognized_is_none(self) -> None:
         assert data_ranges(b"\x00hello world\x00") is None
 
-    def test_malformed_is_none(self) -> None:
+    def test_damaged_structure_is_none(self) -> None:
+        data = build_macho([("", [MachOSection("__DATA", "__data", b"hello")])])
+        assert data_ranges(data[:40]) is None
+
+    def test_only_sections_outside_the_file_is_none(self) -> None:
         data = build_macho([("", [MachOSection("__DATA", "__data", b"hello")])])
         assert data_ranges(data[:-1]) is None
 

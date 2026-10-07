@@ -159,6 +159,7 @@ NCMDS, SIZEOFCMDS = 16, 20
 CMDSIZE = 32 + 4
 NSECTS = 32 + 64
 SECTION = 32 + 72
+SECTION_SIZE = SECTION + 40
 SECTION_OFFSET = SECTION + 48
 
 
@@ -180,11 +181,16 @@ class TestMalformed:
     def test_the_fixture_parses(self, data: bytes) -> None:
         assert names(data_sections(data)) == ["__DATA,__data", "__DATA,__const"]
 
-    def test_every_truncation(self, data: bytes) -> None:
-        # Each prefix cuts into the header, the load commands, or the last
-        # section's bytes, so none of them can parse
-        for length in range(len(data)):
+    def test_every_truncation_of_the_structure(self, data: bytes) -> None:
+        # Each prefix cuts into the header or the load commands
+        for length in range(data.index(b"hello")):
             assert data_sections(data[:length]) is None, length
+
+    def test_truncated_section_bytes_drop_only_that_section(self, data: bytes) -> None:
+        for length in range(data.index(b"world"), len(data)):
+            assert names(data_sections(data[:length])) == ["__DATA,__data"], length
+        for length in range(data.index(b"hello"), data.index(b"world")):
+            assert data_sections(data[:length]) == [], length
 
     @pytest.mark.parametrize(
         ("offset", "value"),
@@ -198,15 +204,29 @@ class TestMalformed:
             (CMDSIZE, 72 + 80 * 2 + 8),  # past the end of the load commands
             (NSECTS, 3),  # more sections than the command holds
             (NSECTS, 0xFFFFFFFF),
-            (SECTION_OFFSET, 0xFFFFFFF0),  # section bytes past the file
         ],
     )
     def test_corrupt_field(self, data: bytes, offset: int, value: int) -> None:
         assert data_sections(_patch(data, offset, value)) is None
 
-    def test_section_size_past_the_file(self) -> None:
-        section = MachOSection("__DATA", "__data", b"hello", size=2**64 - 1)
-        assert sections_of(section) is None
+    @pytest.mark.parametrize(
+        ("offset", "value"),
+        [
+            # The first section's 64-bit size, as when a clang -c object's
+            # __const is patched to 0x10000: GNU reports that section unreadable
+            # and scans the rest
+            (SECTION_SIZE, 0x10000),
+            (SECTION_SIZE, 2**64 - 1),
+            (SECTION_OFFSET, 0xFFFFFFF0),
+        ],
+    )
+    def test_section_outside_the_file_is_skipped(
+        self, data: bytes, offset: int, value: int
+    ) -> None:
+        patched = bytearray(data)
+        fmt = "<Q" if offset == SECTION_SIZE else "<I"
+        struct.pack_into(fmt, patched, offset, value)
+        assert names(data_sections(bytes(patched))) == ["__DATA,__const"]
 
     def test_skipped_sections_are_not_bounds_checked(self) -> None:
         # A zerofill section's offset and size describe memory, not the file

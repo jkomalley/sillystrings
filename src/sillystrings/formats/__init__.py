@@ -20,8 +20,8 @@ def data_ranges(data: bytes | memoryview) -> list[tuple[int, int]] | None:
         list[tuple[int, int]] | None: The `(offset, size)` of each data
             section, in the order the format lists them, with offsets from the
             start of the file. None when the whole file should be scanned
-            instead: no parser recognizes the data, it is malformed, or it has
-            no data sections.
+            instead: no parser recognizes the data, its structure is
+            damaged, or it has no data sections that lie within the file.
     """
     for parse in _PARSERS:
         sections = parse(data)
