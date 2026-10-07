@@ -16,6 +16,14 @@ WIDE_ENCODINGS: dict[str, tuple[int, Literal["little", "big"]]] = {
 """The multi-byte encodings, mapped to their character width and byte order."""
 
 
+TAB = 0x09
+"""Tab is printable by default, matching GNU strings, so it never ends a string."""
+
+OTHER_WHITESPACE = range(0x0A, 0x0E)
+"""Newline, vertical tab, form feed, and carriage return: the rest of C's isspace
+set. GNU strings -w treats them as printable; by default they end a string."""
+
+
 def unsupported_encoding(encoding: str) -> ValueError:
     """Build the error for an encoding outside the supported vocabulary.
 
@@ -37,15 +45,16 @@ def is_printable_ascii(
         byte (int): The byte to check.
         encoding (str): The encoding to use for checking. Default is 's'
             (7-bit ASCII).
-        include_ws (bool): Whether to include whitespace characters as
-            printable. Default is False.
+        include_ws (bool): Whether to also treat newline, vertical tab, form
+            feed, and carriage return as printable. Tab is always printable.
+            Default is False.
 
     Returns:
         bool: True if the byte is printable, False otherwise.
     """
     if encoding not in ("s", "S"):
         return False
-    if include_ws and byte in (0x09, 0x0A, 0x0D):  # Tab (\t), LF (\n), CR (\r)
+    if byte == TAB or (include_ws and byte in OTHER_WHITESPACE):
         return True
     if encoding == "s":  # 7-bit ASCII
         return 0x20 <= byte <= 0x7E
@@ -58,13 +67,14 @@ def is_printable_wide(value: int, *, include_ws: bool = False) -> bool:
 
     Args:
         value (int): The decoded character value to check.
-        include_ws (bool): Whether to include whitespace characters as
-            printable. Default is False.
+        include_ws (bool): Whether to also treat newline, vertical tab, form
+            feed, and carriage return as printable. Tab is always printable.
+            Default is False.
 
     Returns:
         bool: True if the character value is printable, False otherwise.
     """
-    if include_ws and value in (0x0009, 0x000A, 0x000D):
+    if value == TAB or (include_ws and value in OTHER_WHITESPACE):
         return True
     return 0x0020 <= value <= 0x007E
 
