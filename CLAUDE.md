@@ -35,7 +35,7 @@ Key design decisions:
 - **An unsupported encoding raises `ValueError`, it does not yield nothing.** Both `scan()` and `iter_chars()` have an explicit `else` on their dispatch. Since both are generators, the error surfaces on first consumption, not at call time — tests must wrap the call in `list()`. `is_printable_ascii` is the deliberate exception: it returns `False` for UTF-16 encodings because those are handled by `iter_chars`, not by it.
 - **`include_ws` is keyword-only** across `encodings.py`, matching `scan()`'s pre-existing keyword-only signature. This was chosen over globally ignoring ruff's `FBT001`/`FBT002`.
 - **The 100% coverage gate lives in `[tool.pytest.ini_options] addopts`, not in the CI step**, so `ci.yml` stays byte-identical across the project family (design.md A2).
-- **Scanning is the hot path.** `iter_chars` calls a predicate once per byte; see #31 for the pending lookup-table optimization. Be wary of adding per-byte work.
+- **Scanning is the hot path.** For the ASCII encodings `iter_chars` builds a 256-entry printability table from `is_printable_ascii` once per call and maps it over the data, keeping the per-byte loop in C (#31) — do not reintroduce a per-byte Python call there. The UTF-16 path still calls its predicate per character; its bottleneck is the `int.from_bytes` slice, not the predicate. Be wary of adding per-byte work.
 
 ## Workflow
 
