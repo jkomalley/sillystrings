@@ -16,7 +16,7 @@ from sillystrings.cli import (
     positive_int,
 )
 
-from .conftest import MachOSection, build_macho
+from .conftest import S_ZEROFILL, MachOSection, build_macho
 
 
 def run(*args: str, data: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -446,7 +446,7 @@ MACHO = build_macho(
                 MachOSection("__TEXT", "__text", b"code"),
                 MachOSection("__TEXT", "__cstring", b"abcd"),
                 MachOSection("__DATA", "__data", b"efgh"),
-                MachOSection("__DATA", "__bss", size=64, flags=0x1),
+                MachOSection("__DATA", "__bss", size=64, flags=S_ZEROFILL),
             ],
         )
     ]
@@ -499,7 +499,7 @@ class TestDataSections:
         self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
     ) -> None:
         f = tmp_path / "t.o"
-        bss = MachOSection("__DATA", "__bss", size=64, flags=0x1)
+        bss = MachOSection("__DATA", "__bss", size=64, flags=S_ZEROFILL)
         f.write_bytes(build_macho([("__DATA", [bss])]))
         out = self.run_main(mocker, capsys, "-d", str(f))
         assert out.splitlines() == ["__DATA", "__bss", "__DATA"]
