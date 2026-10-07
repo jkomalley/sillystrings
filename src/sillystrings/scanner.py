@@ -4,7 +4,7 @@ from typing import Literal
 
 from sillystrings.encodings import (
     ASCII_ENCODINGS,
-    UTF16_ENCODINGS,
+    WIDE_ENCODINGS,
     Encoding,
     iter_chars,
     unsupported_encoding,
@@ -45,8 +45,8 @@ def scan(
             encoding=encoding,
             include_whitespace=include_whitespace,
         )
-    elif encoding in UTF16_ENCODINGS:
-        yield from _scan_utf16(
+    elif encoding in WIDE_ENCODINGS:
+        yield from _scan_wide(
             data,
             min_length=min_length,
             encoding=encoding,
@@ -80,14 +80,14 @@ def _scan_ascii(
         yield acc_start, acc.decode(codec)
 
 
-def _scan_utf16(
+def _scan_wide(
     data: bytes | memoryview,
     *,
     min_length: int,
     encoding: str,
     include_whitespace: bool,
 ) -> Iterator[tuple[int, str]]:
-    byteorder: Literal["little", "big"] = "little" if encoding == "l" else "big"
+    width, byteorder = WIDE_ENCODINGS[encoding]
     acc: list[str] = []
     acc_start = 0
 
@@ -95,8 +95,10 @@ def _scan_utf16(
         if printable:
             if not acc:
                 acc_start = offset
-            ascii_value = int.from_bytes(data[offset : offset + 2], byteorder=byteorder)
-            acc.append(chr(ascii_value))
+            char_value = int.from_bytes(
+                data[offset : offset + width], byteorder=byteorder
+            )
+            acc.append(chr(char_value))
         else:
             if len(acc) >= min_length:
                 yield acc_start, "".join(acc)

@@ -6,7 +6,12 @@ Encoding = Literal["s", "S", "l", "b"]
 """The encodings sillystrings can scan for, in `strings`' own -e vocabulary."""
 
 ASCII_ENCODINGS = ("s", "S")
-UTF16_ENCODINGS = ("l", "b")
+
+WIDE_ENCODINGS: dict[str, tuple[int, Literal["little", "big"]]] = {
+    "l": (2, "little"),
+    "b": (2, "big"),
+}
+"""The multi-byte encodings, mapped to their character width and byte order."""
 
 
 def unsupported_encoding(encoding: str) -> ValueError:
@@ -46,16 +51,16 @@ def is_printable_ascii(
     return (0x20 <= byte <= 0x7E) or (0x80 <= byte <= 0xFF)
 
 
-def is_printable_utf16(value: int, *, include_ws: bool = False) -> bool:
-    """Check if a UTF-16 value is printable.
+def is_printable_wide(value: int, *, include_ws: bool = False) -> bool:
+    """Check if a multi-byte character value is printable.
 
     Args:
-        value (int): The UTF-16 value to check.
+        value (int): The decoded character value to check.
         include_ws (bool): Whether to include whitespace characters as
             printable. Default is False.
 
     Returns:
-        bool: True if the UTF-16 value is printable, False otherwise.
+        bool: True if the character value is printable, False otherwise.
     """
     if include_ws and value in (0x0009, 0x000A, 0x000D):
         return True
@@ -87,11 +92,11 @@ def iter_chars(
             is_printable_ascii(b, encoding, include_ws=include_ws) for b in range(256)
         )
         yield from enumerate(map(table.__getitem__, data))
-    elif encoding in UTF16_ENCODINGS:
-        byteorder: Literal["little", "big"] = "little" if encoding == "l" else "big"
-        for i in range(0, len(data) - 1, 2):
-            char_bytes: bytes | memoryview = data[i : i + 2]
-            char_value: int = int.from_bytes(bytes=char_bytes, byteorder=byteorder)
-            yield i, is_printable_utf16(char_value, include_ws=include_ws)
+    elif encoding in WIDE_ENCODINGS:
+        width, byteorder = WIDE_ENCODINGS[encoding]
+        # A trailing partial character is never yielded, so it cannot start a run
+        for i in range(0, len(data) - width + 1, width):
+            char_value = int.from_bytes(data[i : i + width], byteorder=byteorder)
+            yield i, is_printable_wide(char_value, include_ws=include_ws)
     else:
         raise unsupported_encoding(encoding)
