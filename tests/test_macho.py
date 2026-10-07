@@ -128,6 +128,32 @@ class TestDataSections:
             assert data_sections(view) == data_sections(data)
 
 
+def test_hand_assembled_big_endian_32_bit_object() -> None:
+    # Byte by byte from the offsets documented in <mach-o/loader.h>, sharing
+    # nothing with build_macho or the parser: a PowerPC MH_OBJECT with one
+    # LC_SEGMENT holding (__TEXT,__cstring)
+    data = bytearray(162)
+    put = struct.pack_into
+    # mach_header: magic, cputype (POWERPC), filetype (MH_OBJECT), ncmds,
+    # sizeofcmds
+    put(">I", data, 0, 0xFEEDFACE)
+    put(">I", data, 4, 18)
+    put(">I", data, 12, 0x1)
+    put(">I", data, 16, 1)
+    put(">I", data, 20, 124)
+    # segment_command at 28: cmd (LC_SEGMENT), cmdsize, nsects
+    put(">I", data, 28, 0x1)
+    put(">I", data, 32, 124)
+    put(">I", data, 28 + 48, 1)
+    # section at 84: sectname, segname, size, offset
+    put("16s", data, 84, b"__cstring")
+    put("16s", data, 84 + 16, b"__TEXT")
+    put(">I", data, 84 + 36, 10)
+    put(">I", data, 84 + 40, 152)
+    data[152:162] = b"hello ppc\0"
+    assert data_sections(bytes(data)) == [Section("__TEXT,__cstring", 152, 10)]
+
+
 class TestNotMachO:
     @pytest.mark.parametrize(
         "data",
