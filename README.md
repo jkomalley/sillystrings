@@ -57,7 +57,7 @@ and ELF files (32- and 64-bit, either byte order) are recognized. With `-d`:
 - "Data" means every section loaded with content from the file, **code
   included**. Zero-filled sections (such as `__bss` and `.bss`) are skipped,
   and so are sections that aren't loaded, such as debug info and ELF's
-  `.comment` and symbol tables.
+  `.comment` and `.symtab` (`.dynsym` is loaded, so it is scanned).
 - A section whose bytes lie outside the file is skipped, and the rest are
   scanned.
 - Everything else is scanned whole: fat (universal) Mach-O files, static
