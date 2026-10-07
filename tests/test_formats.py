@@ -1,6 +1,7 @@
 from sillystrings.formats import data_ranges
 
-from .conftest import MachOSection, build_macho
+from .conftest import ElfSection, MachOSection, build_elf, build_macho
+from .test_elf import SHF_ALLOC, SHF_EXECINSTR
 
 
 class TestDataRanges:
@@ -15,6 +16,23 @@ class TestDataRanges:
             (data.index(b"code"), 4),
             (data.index(b"hello"), 5),
         ]
+
+    def test_elf_sections_as_file_offsets(self) -> None:
+        data = build_elf(
+            [
+                ElfSection(".text", b"code", flags=SHF_ALLOC | SHF_EXECINSTR),
+                ElfSection(".comment", b"GCC: 1"),
+                ElfSection(".rodata", b"hello", flags=SHF_ALLOC),
+            ]
+        )
+        assert data_ranges(data) == [
+            (data.index(b"code"), 4),
+            (data.index(b"hello"), 5),
+        ]
+
+    def test_elf_with_no_data_sections_is_none(self) -> None:
+        # Such as an object built from an empty source file
+        assert data_ranges(build_elf([ElfSection(".comment", b"GCC: 1")])) is None
 
     def test_unrecognized_is_none(self) -> None:
         assert data_ranges(b"\x00hello world\x00") is None

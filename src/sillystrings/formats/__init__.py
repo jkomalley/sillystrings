@@ -1,12 +1,13 @@
 from collections.abc import Callable
 
-from sillystrings.formats import macho
+from sillystrings.formats import elf, macho
 from sillystrings.formats.common import Section
 
 # Each parser returns None for data that is not its format, so the first one
 # to return a list owns the file. A new format is one more entry here.
 _PARSERS: tuple[Callable[[bytes | memoryview], list[Section] | None], ...] = (
     macho.data_sections,
+    elf.data_sections,
 )
 
 

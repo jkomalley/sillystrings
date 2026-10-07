@@ -170,6 +170,132 @@ def build_macho(
     )
 
 
+@dataclass(frozen=True)
+class ElfSection:
+    name: str
+    content: bytes = b""
+    type: int = 1  # SHT_PROGBITS
+    flags: int = 0
+    link: int = 0
+    info: int = 0
+    entsize: int = 0
+    # Override the header fields, which otherwise describe content as placed
+    size: int | None = None
+    offset: int | None = None
+    name_offset: int | None = None
+
+
+# The structs of <elf.h>, field by field, as (name, struct format). As with the
+# Mach-O structs above, nothing here is shared with the parser.
+_ELF32_EHDR = [
+    ("e_ident", "16s"),
+    ("e_type", "H"),
+    ("e_machine", "H"),
+    ("e_version", "I"),
+    ("e_entry", "I"),
+    ("e_phoff", "I"),
+    ("e_shoff", "I"),
+    ("e_flags", "I"),
+    ("e_ehsize", "H"),
+    ("e_phentsize", "H"),
+    ("e_phnum", "H"),
+    ("e_shentsize", "H"),
+    ("e_shnum", "H"),
+    ("e_shstrndx", "H"),
+]
+_ELF64_EHDR = [
+    (name, "Q" if name in {"e_entry", "e_phoff", "e_shoff"} else fmt)
+    for name, fmt in _ELF32_EHDR
+]
+_ELF32_SHDR = [
+    ("sh_name", "I"),
+    ("sh_type", "I"),
+    ("sh_flags", "I"),
+    ("sh_addr", "I"),
+    ("sh_offset", "I"),
+    ("sh_size", "I"),
+    ("sh_link", "I"),
+    ("sh_info", "I"),
+    ("sh_addralign", "I"),
+    ("sh_entsize", "I"),
+]
+_ELF64_SHDR = [
+    (
+        name,
+        "I" if name in {"sh_name", "sh_type", "sh_link", "sh_info"} else "Q",
+    )
+    for name, _ in _ELF32_SHDR
+]
+
+
+def build_elf(
+    sections: Sequence[ElfSection],
+    *,
+    is_64: bool = True,
+    big_endian: bool = False,
+    e_type: int = 1,  # ET_REL
+    extended: bool = False,
+) -> bytes:
+    """Build an ELF file: header, section contents, names, then the headers.
+
+    The section header table is the null section, the given sections in order,
+    then .shstrtab, so the given sections have indexes 1 to len(sections).
+    extended stores the section count and string table index in section 0, as
+    files with SHN_LORESERVE or more sections must.
+    """
+    e = ">" if big_endian else "<"
+    ehdr, shdr = (_ELF64_EHDR, _ELF64_SHDR) if is_64 else (_ELF32_EHDR, _ELF32_SHDR)
+    # EI_MAG0-3, EI_CLASS (ELFCLASS32/64), EI_DATA (ELFDATA2LSB/MSB), EI_VERSION
+    ident = b"\x7fELF" + bytes([2 if is_64 else 1, 2 if big_endian else 1, 1])
+
+    # The name string table goes last among the contents, and names itself
+    all_sections = [*sections, ElfSection(".shstrtab", type=3)]  # SHT_STRTAB
+    names = bytearray(b"\0")
+    name_offsets = []
+    for s in all_sections:
+        name_offsets.append(len(names))
+        names += s.name.encode() + b"\0"
+    all_sections[-1] = ElfSection(".shstrtab", bytes(names), type=3)
+
+    contents_start = _size(ehdr)
+    contents = bytearray()
+    headers = [b""]  # section 0, filled in once the count is known
+    for s, name_offset in zip(all_sections, name_offsets, strict=True):
+        offset = contents_start + len(contents) if s.offset is None else s.offset
+        contents += s.content
+        headers.append(
+            _pack(
+                shdr,
+                e,
+                sh_name=name_offset if s.name_offset is None else s.name_offset,
+                sh_type=s.type,
+                sh_flags=s.flags,
+                sh_offset=offset,
+                sh_size=len(s.content) if s.size is None else s.size,
+                sh_link=s.link,
+                sh_info=s.info,
+                sh_entsize=s.entsize,
+            )
+        )
+    shnum, shstrndx = len(headers), len(headers) - 1
+    headers[0] = _pack(
+        shdr, e, sh_size=shnum if extended else 0, sh_link=shstrndx if extended else 0
+    )
+    header = _pack(
+        ehdr,
+        e,
+        e_ident=ident,
+        e_type=e_type,
+        e_version=1,  # EV_CURRENT
+        e_shoff=contents_start + len(contents),
+        e_ehsize=_size(ehdr),
+        e_shentsize=_size(shdr),
+        e_shnum=0 if extended else shnum,  # SHN_UNDEF
+        e_shstrndx=0xFFFF if extended else shstrndx,  # SHN_XINDEX
+    )
+    return header + contents + b"".join(headers)
+
+
 @pytest.fixture(scope="session")
 def make_binary_file(
     tmp_path_factory: pytest.TempPathFactory,
