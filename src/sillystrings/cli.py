@@ -57,7 +57,7 @@ def open_source(name: str) -> Iterator[Source]:
     """
     if name == "-":
         # stdin may be a pipe, which cannot be mapped
-        yield Source("<stdin>", sys.stdin.buffer.read())
+        yield Source("{standard input}", sys.stdin.buffer.read())
         return
     with Path(name).open("rb") as f:
         if os.fstat(f.fileno()).st_size == 0:
@@ -259,13 +259,24 @@ def _run() -> None:
             print(f"sillystrings: {name}: No such file", file=sys.stderr)
             sys.exit(1)
 
-    multiple: bool = len(names) > 1
+    # Strings are written as bytes rather than printed, so each one is output
+    # as exactly the bytes it was found as. An -e S string holds bytes
+    # 0x80-0xFF as Latin-1 code points, which print() would encode with the
+    # locale's encoding -- two bytes each under UTF-8. All string output goes
+    # through this one stream, so nothing on the text layer can reorder it.
+    out = sys.stdout.buffer
+    # The binary stream is always block-buffered; keep the line-at-a-time
+    # output that print() gives on a terminal
+    line_buffered = sys.stdout.line_buffering
 
     # One source is open at a time, so peak memory does not grow with the
     # number of files
     for name in names:
         with open_source(name) as source, memoryview(source.data) as view:
-            prefix = f"{source.name}: " if (multiple or args.print_file_name) else ""
+            # Only with -f, even for several files: GNU strings never prefixes
+            # on its own. The name is the bytes it was given as, like GNU
+            # strings, so one not valid in the locale's encoding round-trips.
+            prefix = os.fsencode(source.name) + b": " if args.print_file_name else b""
             # GNU strings ignores -d for stdin and scans the stream whole
             data_only = args.data_only and name != "-"
             for start, size in _ranges(view, data_only=data_only):
@@ -278,10 +289,16 @@ def _run() -> None:
                         encoding=args.encoding,
                         include_whitespace=args.include_all_whitespace,
                     ):
-                        print(
-                            f"{prefix}{format_offset(start + offset, args.radix)}"
-                            f"{string}"
+                        out.write(
+                            prefix
+                            + format_offset(start + offset, args.radix).encode()
+                            # Every scanned character is one Latin-1 code
+                            # point: a byte for -e S, ASCII for the rest
+                            + string.encode("latin-1")
+                            + b"\n"
                         )
+                        if line_buffered:
+                            out.flush()
 
 
 def _ranges(data: memoryview, *, data_only: bool) -> list[tuple[int, int]]:

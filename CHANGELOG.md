@@ -22,11 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Scanning with `-e s` and `-e S` is roughly 1.75x and 2x faster. (#50)
 - Input files are memory-mapped and scanned one at a time, so memory use no longer grows with file size or file count. (#53)
+- Filenames are printed only with `-f`, matching GNU `strings`. Output for multiple files without `-f` no longer includes filenames; add `-f` to get the old output. With `-f`, stdin is now labelled `{standard input}`, as in GNU, rather than `<stdin>`. (#63)
 
 ### Fixed
 
 - Exits 1 quietly, rather than printing "Exception ignored" and exiting 120, when the output pipe closes before buffered output is flushed. (#58)
 - Tab no longer ends a string, and `-w` now also includes vertical tab and form feed, matching GNU `strings`. This changes default output for any string containing a tab. (#59)
+- `-e S` writes bytes 0x80-0xFF as the raw bytes found, as GNU `strings` does, rather than UTF-8-encoding them. (#61)
 
 ## [0.1.0] - 2026-09-11
 
