@@ -16,6 +16,8 @@ from sillystrings.cli import (
     positive_int,
 )
 
+from .conftest import S_ZEROFILL, MachOSection, build_macho
+
 
 def run(*args: str, data: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
     cmd = ["uv", "run", "sillystrings", *args]
@@ -151,6 +153,18 @@ def test_version() -> None:
     assert b"sillystrings" in result.stdout
 
 
+def test_data_flag(tmp_path: Path) -> None:
+    f = tmp_path / "t.o"
+    f.write_bytes(
+        build_macho([("", [MachOSection("__TEXT", "__cstring", b"hello world")])])
+    )
+    data_only = run("-d", str(f))
+    assert data_only.returncode == 0
+    assert data_only.stdout == b"hello world\n"
+    # The whole file also holds the section names from the load commands
+    assert b"__cstring" in run(str(f)).stdout
+
+
 # --- Edge case tests ---
 
 
@@ -253,6 +267,24 @@ class TestBuildParser:
         assert args.encoding == "S"
         assert args.include_all_whitespace is True
         assert args.print_file_name is True
+
+    def test_data_only_defaults_off(self) -> None:
+        assert build_parser().parse_args([]).data_only is False
+
+    # -a and -d share a destination, so the last one given wins, as in GNU strings
+    @pytest.mark.parametrize(
+        ("argv", "data_only"),
+        [
+            (["-d"], True),
+            (["--data"], True),
+            (["-a"], False),
+            (["--all"], False),
+            (["-a", "-d"], True),
+            (["-d", "-a"], False),
+        ],
+    )
+    def test_all_and_data_last_wins(self, argv: list[str], data_only: bool) -> None:
+        assert build_parser().parse_args(argv).data_only is data_only
 
     def test_octal_shorthand(self) -> None:
         assert build_parser().parse_args(["-o"]).radix == "o"
@@ -404,6 +436,98 @@ class TestMain:
         assert "7 world" not in out
 
 
+# A Mach-O object whose two data sections sit back to back, with a code
+# section and a zerofill section that -d must handle
+MACHO = build_macho(
+    [
+        (
+            "",
+            [
+                MachOSection("__TEXT", "__text", b"code"),
+                MachOSection("__TEXT", "__cstring", b"abcd"),
+                MachOSection("__DATA", "__data", b"efgh"),
+                MachOSection("__DATA", "__bss", size=64, flags=S_ZEROFILL),
+            ],
+        )
+    ]
+)
+CODE, CSTRING, DATA = MACHO.index(b"code"), MACHO.index(b"abcd"), MACHO.index(b"efgh")
+
+
+class TestDataSections:
+    @pytest.fixture
+    def macho(self, tmp_path: Path) -> Path:
+        f = tmp_path / "t.o"
+        f.write_bytes(MACHO)
+        return f
+
+    def run_main(self, mocker: MockerFixture, capsys: Capture, *argv: str) -> str:
+        mocker.patch("sys.argv", ["sillystrings", *argv])
+        main()
+        return capsys.readouterr().out
+
+    def test_data_scans_each_section_at_its_file_offset(
+        self, macho: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        # Code is scanned too, as in GNU strings. The adjacent sections are
+        # scanned separately, so their strings do not run together.
+        out = self.run_main(mocker, capsys, "-d", "-t", "d", str(macho))
+        assert out.splitlines() == [
+            f"{CODE:7d} code",
+            f"{CSTRING:7d} abcd",
+            f"{DATA:7d} efgh",
+        ]
+
+    @pytest.mark.parametrize("argv", [[], ["-a"], ["-d", "-a"]])
+    def test_whole_file_by_default_and_with_all(
+        self, argv: list[str], macho: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        out = self.run_main(mocker, capsys, *argv, "-t", "d", str(macho))
+        lines = out.splitlines()
+        assert f"{CODE:7d} codeabcdefgh" in lines
+        assert any(line.endswith(" __cstring") for line in lines)
+
+    def test_data_on_an_unrecognized_file_scans_it_whole(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"\x00hello\x00world\x00")
+        out = self.run_main(mocker, capsys, "-d", "-t", "d", str(f))
+        assert out.splitlines() == ["      1 hello", "      7 world"]
+
+    def test_data_with_no_data_sections_scans_the_whole_file(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        f = tmp_path / "t.o"
+        bss = MachOSection("__DATA", "__bss", size=64, flags=S_ZEROFILL)
+        f.write_bytes(build_macho([("__DATA", [bss])]))
+        out = self.run_main(mocker, capsys, "-d", str(f))
+        assert out.splitlines() == ["__DATA", "__bss", "__DATA"]
+
+    def test_data_is_ignored_for_stdin(
+        self, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        # As in GNU strings, which scans stdin whole whatever the flags
+        fake_stdin = mocker.Mock()
+        fake_stdin.buffer = BytesIO(MACHO)
+        mocker.patch("sys.stdin", fake_stdin)
+        out = self.run_main(mocker, capsys, "-d", "-t", "d")
+        assert f"{CODE:7d} codeabcdefgh" in out.splitlines()
+
+    def test_data_per_file(
+        self, macho: Path, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        other = tmp_path / "t.bin"
+        other.write_bytes(b"\x00hello\x00")
+        out = self.run_main(mocker, capsys, "-d", str(macho), str(other))
+        assert out.splitlines() == [
+            f"{macho}: code",
+            f"{macho}: abcd",
+            f"{macho}: efgh",
+            f"{other}: hello",
+        ]
+
+
 class TestOpenSource:
     def test_file_is_mapped(self, tmp_path: Path) -> None:
         f = tmp_path / "t.bin"
@@ -469,6 +593,25 @@ class TestBrokenPipe:
         # Exits 1 like coreutils rather than surfacing a traceback. Under
         # capsys stdout has no fileno, so the devnull rebinding is suppressed
         # -- there is no real pipe to protect in that case.
+        assert exc.value.code == 1
+        assert capsys.readouterr().err == ""
+
+    # -d scans a slice of the mapped file per section, so it has its own view
+    # to release
+    @pytest.mark.parametrize("codec", ["ascii", "utf-16-le"])
+    def test_data_sections_exit_quietly_when_the_pipe_closes(
+        self, codec: str, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        f = tmp_path / "t.o"
+        content = "hello world\x00".encode(codec)
+        f.write_bytes(build_macho([("", [MachOSection("__DATA", "__data", content)])]))
+        encoding = "s" if codec == "ascii" else "l"
+        mocker.patch.object(sys, "argv", ["sillystrings", "-d", "-e", encoding, str(f)])
+        mocker.patch("builtins.print", side_effect=BrokenPipeError)
+
+        with pytest.raises(SystemExit) as exc:
+            main()
+
         assert exc.value.code == 1
         assert capsys.readouterr().err == ""
 
