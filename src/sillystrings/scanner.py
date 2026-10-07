@@ -28,6 +28,8 @@ def scan(
             - 'S' for 8-bit extended ASCII
             - 'l' for UTF-16 little-endian
             - 'b' for UTF-16 big-endian
+            - 'L' for 32-bit little-endian
+            - 'B' for 32-bit big-endian
         include_whitespace (bool): Whether to include whitespace characters
             as part of the strings. Default is False.
 

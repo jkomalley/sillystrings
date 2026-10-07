@@ -70,6 +70,9 @@ class TestIsPrintableAscii:
             (0x41, "b", False, False),  # 'A' — not handled by is_printable
             (0x20, "b", False, False),  # space — not handled by is_printable
             (0x09, "b", True, False),  # \t with include_ws — still False
+            # --- encoding='L'/'B' (32-bit) — always False, handled by iter_chars ---
+            (0x41, "L", False, False),  # 'A' — not handled by is_printable
+            (0x41, "B", False, False),  # 'A' — not handled by is_printable
         ],
     )
     def test_is_printable_ascii(
@@ -123,6 +126,10 @@ class TestIsPrintableWide:
             (0x007F, True, False),  # DEL — still excluded even with include_ws
             (0x0080, True, False),  # above range — still excluded
             (0xFFFF, True, False),  # max 16-bit — still excluded
+            # 32-bit values — only reachable from the 'L'/'B' encodings
+            (0x10000, False, False),  # first value beyond 16 bits
+            (0x10041, False, False),  # low 16 bits are 'A' — still not printable
+            (0xFFFFFFFF, True, False),  # max 32-bit value
         ],
     )
     def test_is_printable_wide(
@@ -223,6 +230,47 @@ class TestIterChars:
             (b"\x00\x09", "b", True, [(0, True)]),  # \t in UTF-16 BE
             (b"\x00\x09", "b", False, [(0, False)]),  # same, flag off
             (b"\x00\x0b", "b", True, [(0, False)]),  # \v — not in ws set
+            # --- encoding='L' (32-bit LE), include_ws=False ---
+            (b"", "L", False, []),
+            # "hi" in UTF-32 LE
+            (b"h\x00\x00\x00i\x00\x00\x00", "L", False, [(0, True), (4, True)]),
+            # non-printable quad
+            (b"\x00\x00\x00\x00", "L", False, [(0, False)]),
+            # low byte in range but upper bytes non-zero — each upper byte matters
+            (b"\x41\x01\x00\x00", "L", False, [(0, False)]),
+            (b"\x41\x00\x01\x00", "L", False, [(0, False)]),
+            (b"\x41\x00\x00\x01", "L", False, [(0, False)]),
+            # mixed: non-printable then printable
+            (b"\x00\x00\x00\x00A\x00\x00\x00", "L", False, [(0, False), (4, True)]),
+            # trailing partial character — 1 to 3 leftover bytes silently ignored
+            (b"h\x00\x00\x00i", "L", False, [(0, True)]),
+            (b"h\x00\x00\x00i\x00\x00", "L", False, [(0, True)]),
+            # shorter than one character — yields nothing
+            (b"h\x00\x00", "L", False, []),
+            # --- encoding='L' (32-bit LE), include_ws=True ---
+            (b"\x09\x00\x00\x00", "L", True, [(0, True)]),  # \t in UTF-32 LE
+            (b"\x09\x00\x00\x00", "L", False, [(0, False)]),  # same, flag off
+            (b"\x0b\x00\x00\x00", "L", True, [(0, False)]),  # \v — not in ws set
+            # --- encoding='B' (32-bit BE), include_ws=False ---
+            (b"", "B", False, []),
+            # "hi" in UTF-32 BE
+            (b"\x00\x00\x00h\x00\x00\x00i", "B", False, [(0, True), (4, True)]),
+            # non-printable quad
+            (b"\x00\x00\x00\x00", "B", False, [(0, False)]),
+            # low byte in range but upper bytes non-zero — each upper byte matters
+            (b"\x00\x00\x01\x41", "B", False, [(0, False)]),
+            (b"\x00\x01\x00\x41", "B", False, [(0, False)]),
+            (b"\x01\x00\x00\x41", "B", False, [(0, False)]),
+            # mixed
+            (b"\x00\x00\x00\x00\x00\x00\x00A", "B", False, [(0, False), (4, True)]),
+            # trailing partial character — silently ignored
+            (b"\x00\x00\x00h\x00\x00\x00", "B", False, [(0, True)]),
+            # shorter than one character — yields nothing
+            (b"\x00\x00\x00", "B", False, []),
+            # --- encoding='B' (32-bit BE), include_ws=True ---
+            (b"\x00\x00\x00\x09", "B", True, [(0, True)]),  # \t in UTF-32 BE
+            (b"\x00\x00\x00\x09", "B", False, [(0, False)]),  # same, flag off
+            (b"\x00\x00\x00\x0b", "B", True, [(0, False)]),  # \v — not in ws set
         ],
     )
     def test_iter_chars(
