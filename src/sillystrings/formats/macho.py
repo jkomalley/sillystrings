@@ -86,8 +86,9 @@ def data_sections(data: bytes | memoryview) -> list[Section] | None:
 
     Returns:
         list[Section] | None: The sections in load-command order. None when
-            the data is not a thin Mach-O file or is malformed in any way;
-            this never raises on bad input.
+            the data is not a thin Mach-O file or its header or load commands
+            are damaged. A section whose bytes lie outside the file is left
+            out. This never raises on bad input.
     """
     layout = _LAYOUTS.get(_magic(data))
     if layout is None or len(data) < layout.header_size:
@@ -139,8 +140,10 @@ def _segment_sections(
         segment_name, section_name = _name(segname), _name(sectname)
         if not _is_data(segment_name, section_name, size, offset, flags):
             continue
+        # GNU reports a section it cannot read and scans the rest, so a bad
+        # section costs only itself, not the whole object
         if offset + size > len(data):
-            return None
+            continue
         result.append(Section(f"{segment_name},{section_name}", offset, size))
     return result
 
