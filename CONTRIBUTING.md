@@ -34,7 +34,7 @@ responsibility:
 | --- | --- |
 | `encodings.py` | The encoding vocabulary (`Encoding`, `ASCII_ENCODINGS`, `WIDE_ENCODINGS`), the per-byte printability predicates, and `iter_chars` — which walks a buffer yielding `(offset, printable)`. |
 | `scanner.py` | `scan()` — the public API. Dispatches to the `_scan_ascii` / `_scan_wide` accumulators, which group runs of printable characters into strings meeting the minimum length. |
-| `formats/` | Object file parsers for `-d`. `formats/__init__.py` has `data_ranges()`, which tries each format in turn; `formats/macho.py` and `formats/elf.py` find a Mach-O or ELF file's data sections; `formats/common.py` holds the shared `Section` record. |
+| `formats/` | Object file parsers for `-d`. `formats/__init__.py` has `data_ranges()`, which tries each format in turn; `formats/macho.py` and `formats/elf.py` find a Mach-O or ELF file's data sections; `formats/common.py` holds the shared `Section` record and the `sizeof`/`unpack` struct helpers. |
 | `cli.py` | The `sillystrings` command-line entry point: argparse wiring, offset formatting, and stdin/file input handling. |
 | `__version__.py` | The installed version, read from package metadata. |
 

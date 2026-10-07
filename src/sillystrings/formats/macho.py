@@ -7,12 +7,11 @@ against the real header with a C compiler. The rules for which sections count
 as data come from GNU binutils 2.47 and cite the function they mirror.
 """
 
-import functools
 import struct
 from dataclasses import dataclass
-from typing import Annotated, NamedTuple, get_type_hints
+from typing import Annotated, NamedTuple
 
-from sillystrings.formats.common import Section
+from sillystrings.formats.common import Section, sizeof, unpack
 
 # --------------------------------------------------------------------------- #
 # Constants from <mach-o/loader.h>
@@ -136,21 +135,6 @@ class Section64(NamedTuple):
     reserved3: Annotated[int, "I"]  # uint32_t reserved3
 
 
-@functools.cache
-def struct_format(cls: type[tuple]) -> str:
-    """Join a struct's per-field format codes, in field order, with no byte order.
-
-    Args:
-        cls (type[tuple]): One of the NamedTuple structs above.
-
-    Returns:
-        str: The struct module format for the whole C struct.
-    """
-    # Annotations keep the order the fields were declared in
-    hints = get_type_hints(cls, include_extras=True)
-    return "".join(hint.__metadata__[0] for hint in hints.values())
-
-
 # --------------------------------------------------------------------------- #
 # Rules from GNU binutils 2.47
 # --------------------------------------------------------------------------- #
@@ -185,19 +169,6 @@ BFD_DWARF_SECTIONS = frozenset(
 # --------------------------------------------------------------------------- #
 
 
-def sizeof(cls: type[tuple]) -> int:
-    """The size of a C struct in bytes, like C's sizeof.
-
-    Args:
-        cls (type[tuple]): One of the NamedTuple structs above.
-
-    Returns:
-        int: The struct's size, from its field formats.
-    """
-    # Standard sizes and no alignment padding: loader.h's structs have none
-    return struct.calcsize("<" + struct_format(cls))
-
-
 _HeaderType = type[MachHeader] | type[MachHeader64]
 _SegmentType = type[SegmentCommand] | type[SegmentCommand64]
 _SectionType = type[Section32] | type[Section64]
@@ -215,26 +186,23 @@ class _Layout:
 
     def read_header(self, data: bytes | memoryview) -> MachHeader | MachHeader64:
         """Unpack the mach_header at the start of data."""
-        return self.header._make(self._unpack(self.header, data, 0))
+        return self.header._make(unpack(self.header, self.byte_order, data, 0))
 
     def read_load_command(self, data: bytes | memoryview, offset: int) -> LoadCommand:
         """Unpack the load_command at offset."""
-        return LoadCommand._make(self._unpack(LoadCommand, data, offset))
+        return LoadCommand._make(unpack(LoadCommand, self.byte_order, data, offset))
 
     def read_segment(
         self, data: bytes | memoryview, offset: int
     ) -> SegmentCommand | SegmentCommand64:
         """Unpack the segment_command at offset."""
-        return self.segment._make(self._unpack(self.segment, data, offset))
+        return self.segment._make(unpack(self.segment, self.byte_order, data, offset))
 
     def read_section(
         self, data: bytes | memoryview, offset: int
     ) -> Section32 | Section64:
         """Unpack the section at offset."""
-        return self.section._make(self._unpack(self.section, data, offset))
-
-    def _unpack(self, cls: type[tuple], data: bytes | memoryview, offset: int) -> tuple:
-        return struct.unpack_from(self.byte_order + struct_format(cls), data, offset)
+        return self.section._make(unpack(self.section, self.byte_order, data, offset))
 
 
 _THIN = (MachHeader, LC_SEGMENT, SegmentCommand, Section32)
