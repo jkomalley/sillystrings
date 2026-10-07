@@ -81,8 +81,12 @@ def iter_chars(
         ValueError: If the encoding is not an Encoding member.
     """
     if encoding in ASCII_ENCODINGS:
-        for i, byte in enumerate(data):
-            yield i, is_printable_ascii(byte, encoding, include_ws=include_ws)
+        # The answer depends only on the byte once encoding and include_ws are
+        # fixed, so compute all 256 up front and keep the per-byte loop in C.
+        table = tuple(
+            is_printable_ascii(b, encoding, include_ws=include_ws) for b in range(256)
+        )
+        yield from enumerate(map(table.__getitem__, data))
     elif encoding in UTF16_ENCODINGS:
         byteorder: Literal["little", "big"] = "little" if encoding == "l" else "big"
         for i in range(0, len(data) - 1, 2):
