@@ -31,6 +31,7 @@ With no file arguments, reads from stdin.
 | `-n NUM` | Minimum string length (default: 4) |
 | `-e {s,S,l,b}` | Character encoding: `s` = 7-bit ASCII (default), `S` = 8-bit, `l` = UTF-16 LE, `b` = UTF-16 BE |
 | `-t {d,o,x}` | Print byte offset before each string in decimal, octal, or hex |
+| `-o` | Same as `-t o` |
 | `-w` | Include all whitespace characters (newlines, carriage returns) in strings |
 | `-f` | Print the filename before each string |
 | `-v` | Show version and exit |
