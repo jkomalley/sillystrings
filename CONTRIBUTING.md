@@ -32,8 +32,8 @@ responsibility:
 
 | Module | Responsibility |
 | --- | --- |
-| `encodings.py` | The encoding vocabulary (`Encoding`, `ASCII_ENCODINGS`, `UTF16_ENCODINGS`), the per-byte printability predicates, and `iter_chars` — which walks a buffer yielding `(offset, printable)`. |
-| `scanner.py` | `scan()` — the public API. Dispatches to the `_scan_ascii` / `_scan_utf16` accumulators, which group runs of printable characters into strings meeting the minimum length. |
+| `encodings.py` | The encoding vocabulary (`Encoding`, `ASCII_ENCODINGS`, `WIDE_ENCODINGS`), the per-byte printability predicates, and `iter_chars` — which walks a buffer yielding `(offset, printable)`. |
+| `scanner.py` | `scan()` — the public API. Dispatches to the `_scan_ascii` / `_scan_wide` accumulators, which group runs of printable characters into strings meeting the minimum length. |
 | `cli.py` | The `sillystrings` command-line entry point: argparse wiring, offset formatting, and stdin/file input handling. |
 | `__version__.py` | The installed version, read from package metadata. |
 

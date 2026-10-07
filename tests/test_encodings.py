@@ -81,7 +81,7 @@ class TestIsPrintableAscii:
         )
 
 
-class TestIsPrintableUtf16:
+class TestIsPrintableWide:
     @pytest.mark.parametrize(
         ("value", "include_ws", "expected"),
         [
@@ -125,10 +125,10 @@ class TestIsPrintableUtf16:
             (0xFFFF, True, False),  # max 16-bit — still excluded
         ],
     )
-    def test_is_printable_utf16(
+    def test_is_printable_wide(
         self, value: int, include_ws: bool, expected: bool
     ) -> None:
-        assert encodings.is_printable_utf16(value, include_ws=include_ws) == expected
+        assert encodings.is_printable_wide(value, include_ws=include_ws) == expected
 
 
 class TestIterChars:

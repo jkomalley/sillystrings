@@ -25,17 +25,17 @@ Note the ruff recipes are scoped to `src/ tests/` while `ruff check .` covers th
 
 The project uses a `src/sillystrings/` layout with three modules in a strict dependency line — `cli.py` → `scanner.py` → `encodings.py`:
 
-- `encodings.py` — The encoding vocabulary and the per-character printability rules. Defines `Encoding` (the `Literal["s", "S", "l", "b"]` alias), the `ASCII_ENCODINGS` / `UTF16_ENCODINGS` tuples both dispatchers switch on, `unsupported_encoding()` for the shared error, the `is_printable_ascii` / `is_printable_utf16` predicates, and `iter_chars()` — which walks a buffer yielding `(offset, printable)` pairs.
-- `scanner.py` — `scan()`, the public API. Dispatches on encoding to `_scan_ascii` or `_scan_utf16`, which accumulate runs of printable characters and yield `(offset, string)` for every run meeting `min_length`. Both accumulators flush a trailing run after the loop.
+- `encodings.py` — The encoding vocabulary and the per-character printability rules. Defines `Encoding` (the `Literal["s", "S", "l", "b"]` alias), the `ASCII_ENCODINGS` tuple and the `WIDE_ENCODINGS` map (encoding → character width and byte order) that both dispatchers switch on, `unsupported_encoding()` for the shared error, the `is_printable_ascii` / `is_printable_wide` predicates, and `iter_chars()` — which walks a buffer yielding `(offset, printable)` pairs.
+- `scanner.py` — `scan()`, the public API. Dispatches on encoding to `_scan_ascii` or `_scan_wide`, which accumulate runs of printable characters and yield `(offset, string)` for every run meeting `min_length`. Both accumulators flush a trailing run after the loop.
 - `cli.py` — The argparse entry point. Builds the parser, resolves file/stdin sources into `Source` records, formats offsets by radix, and prints results.
 
 Key design decisions:
 
 - **The encoding letters are defined once, in `encodings.py`.** `cli.py` derives its `-e` choices from `get_args(Encoding)` rather than repeating the list, so the flag cannot drift from what `scan()` accepts. Before this was consolidated the four letters appeared in eight places across four files. Do not reintroduce a literal encoding list.
-- **An unsupported encoding raises `ValueError`, it does not yield nothing.** Both `scan()` and `iter_chars()` have an explicit `else` on their dispatch. Since both are generators, the error surfaces on first consumption, not at call time — tests must wrap the call in `list()`. `is_printable_ascii` is the deliberate exception: it returns `False` for UTF-16 encodings because those are handled by `iter_chars`, not by it.
+- **An unsupported encoding raises `ValueError`, it does not yield nothing.** Both `scan()` and `iter_chars()` have an explicit `else` on their dispatch. Since both are generators, the error surfaces on first consumption, not at call time — tests must wrap the call in `list()`. `is_printable_ascii` is the deliberate exception: it returns `False` for the wide encodings because those are handled by `iter_chars`, not by it.
 - **`include_ws` is keyword-only** across `encodings.py`, matching `scan()`'s pre-existing keyword-only signature. This was chosen over globally ignoring ruff's `FBT001`/`FBT002`.
 - **The 100% coverage gate lives in `[tool.pytest.ini_options] addopts`, not in the CI step**, so `ci.yml` stays byte-identical across the project family (design.md A2).
-- **Scanning is the hot path.** For the ASCII encodings `iter_chars` builds a 256-entry printability table from `is_printable_ascii` once per call and maps it over the data, keeping the per-byte loop in C (#31) — do not reintroduce a per-byte Python call there. The UTF-16 path still calls its predicate per character; its bottleneck is the `int.from_bytes` slice, not the predicate. Be wary of adding per-byte work.
+- **Scanning is the hot path.** For the ASCII encodings `iter_chars` builds a 256-entry printability table from `is_printable_ascii` once per call and maps it over the data, keeping the per-byte loop in C (#31) — do not reintroduce a per-byte Python call there. The wide path still calls its predicate per character; its bottleneck is the `int.from_bytes` slice, not the predicate. Be wary of adding per-byte work.
 
 ## Workflow
 
