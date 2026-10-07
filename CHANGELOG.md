@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Scanning with `-e s` and `-e S` is roughly 1.75x and 2x faster. (#50)
 - Input files are memory-mapped and scanned one at a time, so memory use no longer grows with file size or file count. (#53)
+- Filenames are printed only with `-f`, matching GNU `strings`. Output for multiple files without `-f` no longer includes filenames; add `-f` to get the old output. (#63)
 
 ### Fixed
 
