@@ -100,6 +100,31 @@ you'd rather not install `just`.
   `cli.py` directly. Only the second layer is visible to coverage, so a new
   branch in `cli.py` needs an in-process test.
 
+### Verifying `-d` against GNU
+
+`-d` is meant to scan exactly the sections GNU `strings -d` scans, so changes
+to a format parser should be checked against GNU itself. On macOS,
+`brew install binutils` gives a GNU `strings` that reads Mach-O (keg-only, so
+it doesn't shadow the system `strings`). Then run the comparison on any
+binaries you like:
+
+```bash
+uv run scripts/compare_gnu.py /bin/ls build/foo.o some.dylib
+uv run scripts/compare_gnu.py --gnu /path/to/strings -n 8 file.o
+```
+
+It runs both tools with `-d` and with `-a`, at `-t d`, and prints a table; it
+exits 1 if anything differs. GNU counts tab as printable and `sillystrings`
+does not, so the script splits GNU's strings on tabs before comparing (the
+script's docstring explains why that is exact); the "raw" column shows the
+unnormalized result.
+
+The Mach-O structs and constants are checked separately, against the real
+`<mach-o/loader.h>`: `tests/test_macho_constants.py` compiles a C program that
+prints every `offsetof`, `sizeof` and constant, and compares them with both the
+parser's and `build_macho`'s definitions. It runs on any Mac with a C compiler
+and is skipped elsewhere.
+
 ## Pull requests
 
 - Branch off `main`; one logical change per PR.
