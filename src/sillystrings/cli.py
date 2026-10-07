@@ -1,8 +1,10 @@
 # src/sillystrings/cli.py
 import argparse
 import contextlib
+import mmap
 import os
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import get_args
@@ -35,7 +37,40 @@ class Source:
     """A named blob of bytes to scan, from a file or from stdin."""
 
     name: str
-    data: bytes
+    data: bytes | memoryview
+
+
+@contextlib.contextmanager
+def open_source(name: str) -> Iterator[Source]:
+    """Open a file, or stdin for "-", as a Source valid for the with block.
+
+    Files are memory-mapped rather than read, so the OS pages them in as the
+    scan reaches them instead of the whole file being copied into memory.
+
+    Args:
+        name (str): A file path, or "-" for stdin.
+
+    Yields:
+        Source: The named data. A file's data is a view that is released when
+            the block exits, so it must not be used afterwards.
+    """
+    if name == "-":
+        # stdin may be a pipe, which cannot be mapped
+        yield Source("<stdin>", sys.stdin.buffer.read())
+        return
+    with Path(name).open("rb") as f:
+        if os.fstat(f.fileno()).st_size == 0:
+            # mmap rejects empty files; read() also covers files like those in
+            # /proc, which report a size of 0 but still have content
+            yield Source(name, f.read())
+            return
+        with (
+            mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mapped,
+            # The scanner needs a buffer that iterates as ints; a bare mmap
+            # iterates as one-byte bytes objects
+            memoryview(mapped) as view,
+        ):
+            yield Source(name, view)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -182,35 +217,32 @@ def main() -> None:
 
 
 def _run() -> None:
-    """Parse arguments, read every source, and print the strings found."""
+    """Parse arguments, then scan each source in turn and print what it finds."""
     args: argparse.Namespace = build_parser().parse_args()
 
-    sources: list[Source] = []
+    names: list[str] = args.files or ["-"]
 
-    if not args.files:
-        sources.append(Source("<stdin>", sys.stdin.buffer.read()))
-    else:
-        for name in args.files:
-            if name == "-":
-                sources.append(Source("<stdin>", sys.stdin.buffer.read()))
-            else:
-                path = Path(name)
-                if not path.is_file():
-                    print(f"sillystrings: {name}: No such file", file=sys.stderr)
-                    sys.exit(1)
-                sources.append(Source(name, path.read_bytes()))
+    # Check every file before scanning any, so a bad path fails the run before
+    # it prints partial output
+    for name in names:
+        if name != "-" and not Path(name).is_file():
+            print(f"sillystrings: {name}: No such file", file=sys.stderr)
+            sys.exit(1)
 
-    multiple: bool = len(sources) > 1
+    multiple: bool = len(names) > 1
 
-    for source in sources:
-        prefix = f"{source.name}: " if (multiple or args.print_file_name) else ""
-        for offset, string in scan(
-            source.data,
-            min_length=args.min_length,
-            encoding=args.encoding,
-            include_whitespace=args.include_all_whitespace,
-        ):
-            print(f"{prefix}{format_offset(offset, args.radix)}{string}")
+    # One source is open at a time, so peak memory does not grow with the
+    # number of files
+    for name in names:
+        with open_source(name) as source:
+            prefix = f"{source.name}: " if (multiple or args.print_file_name) else ""
+            for offset, string in scan(
+                source.data,
+                min_length=args.min_length,
+                encoding=args.encoding,
+                include_whitespace=args.include_all_whitespace,
+            ):
+                print(f"{prefix}{format_offset(offset, args.radix)}{string}")
 
 
 if __name__ == "__main__":
