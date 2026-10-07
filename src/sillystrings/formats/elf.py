@@ -264,10 +264,14 @@ def _section_headers(
     first = layout.read_shdr(data, ehdr.e_shoff)
     shnum = ehdr.e_shnum
     # Extended numbering: with SHN_LORESERVE or more sections, e_shnum is
-    # SHN_UNDEF and the count is section 0's sh_size
+    # SHN_UNDEF and the count is section 0's sh_size. binutils 2.47
+    # bfd/elfcode.h, elf_object_p, rejects a count of 0, and one of 0xffffff00
+    # or more: BFD redefines SHN_LORESERVE as (-0x100u) internally
+    # (include/elf/internal.h), so counts past elf.h's 0xff00 are accepted.
+    # A table that large cannot fit in the file, so the check below covers it.
     if shnum == SHN_UNDEF:
         shnum = first.sh_size
-        if not SHN_UNDEF < shnum < SHN_LORESERVE:
+        if shnum == SHN_UNDEF:
             return None
     if ehdr.e_shoff + shnum * shdr_size > len(data):
         return None
