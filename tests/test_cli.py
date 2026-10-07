@@ -116,6 +116,14 @@ def test_encoding_flag(tmp_path: Path) -> None:
     assert run(str(f), "-e", "s", "-n", "4").stdout.strip() == b""
 
 
+def test_utf32_encoding_flag(tmp_path: Path) -> None:
+    f = tmp_path / "t.bin"
+    f.write_bytes(b"\x00" * 4 + "hello".encode("utf-32-be"))
+    result = run("-e", "B", "-t", "d", str(f))
+    assert result.returncode == 0
+    assert result.stdout == b"      4 hello\n"
+
+
 def test_whitespace_flag(tmp_path: Path) -> None:
     f = tmp_path / "t.bin"
     # Without -w, \n breaks the string into two; with -w, it's one string

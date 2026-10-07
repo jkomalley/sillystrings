@@ -1,8 +1,7 @@
 # tests/test_scanner.py
-from typing import Literal
-
 import pytest
 
+from sillystrings.encodings import Encoding
 from sillystrings.scanner import scan
 
 from .conftest import make_data
@@ -19,6 +18,8 @@ class TestScanner:
             ([], "S", 4, False, []),
             ([], "l", 4, False, []),
             ([], "b", 4, False, []),
+            ([], "L", 4, False, []),
+            ([], "B", 4, False, []),
             # -----------------------------------------------------------------------
             # encoding='s' — basic cases
             # -----------------------------------------------------------------------
@@ -188,12 +189,92 @@ class TestScanner:
             (["hello\tworld"], "b", 4, True, [(0, "hello\tworld")]),
             # tab between two strings — splits them
             (["hello\tworld"], "b", 4, False, [(0, "hello"), (12, "world")]),
+            # -----------------------------------------------------------------------
+            # encoding='L' — 32-bit little-endian
+            # -----------------------------------------------------------------------
+            # basic extraction
+            ([1, "hello", 1], "L", 4, False, [(4, "hello")]),
+            # string at offset 0
+            (["hello", 1], "L", 4, False, [(0, "hello")]),
+            # post-loop flush
+            ([1, "hello"], "L", 4, False, [(4, "hello")]),
+            # all printable
+            (["hello"], "L", 4, False, [(0, "hello")]),
+            # too short
+            ([1, "hi", 1], "L", 4, False, []),
+            # exact min_length
+            ([1, "abcd", 1], "L", 4, False, [(4, "abcd")]),
+            # multiple strings
+            (["hello", 1, "world"], "L", 4, False, [(0, "hello"), (24, "world")]),
+            # offset accuracy — large leading gap
+            ([3, "hello"], "L", 4, False, [(12, "hello")]),
+            # three strings
+            (
+                ["hello", 1, "world", 1, "test1"],
+                "L",
+                4,
+                False,
+                [(0, "hello"), (24, "world"), (48, "test1")],
+            ),
+            # tab extends run
+            (["hel\tlo"], "L", 4, True, [(0, "hel\tlo")]),
+            # tab breaks run when flag off
+            (["hel\tlo"], "L", 4, False, []),
+            # tab between two strings — merges them
+            (["hello\tworld"], "L", 4, True, [(0, "hello\tworld")]),
+            # tab between two strings — splits them
+            (["hello\tworld"], "L", 4, False, [(0, "hello"), (24, "world")]),
+            # trailing partial character — silently ignored, string still extracted
+            (["hello", b"\x41\x00\x00"], "L", 4, False, [(0, "hello")]),
+            # character beyond 16 bits breaks a run
+            (
+                ["hel", b"\x41\x00\x01\x00", "lo"],
+                "L",
+                2,
+                False,
+                [(0, "hel"), (16, "lo")],
+            ),
+            # -----------------------------------------------------------------------
+            # encoding='B' — 32-bit big-endian
+            # -----------------------------------------------------------------------
+            # basic extraction
+            ([1, "hello", 1], "B", 4, False, [(4, "hello")]),
+            # string at offset 0
+            (["hello", 1], "B", 4, False, [(0, "hello")]),
+            # post-loop flush
+            ([1, "hello"], "B", 4, False, [(4, "hello")]),
+            # all printable
+            (["hello"], "B", 4, False, [(0, "hello")]),
+            # too short
+            ([1, "hi", 1], "B", 4, False, []),
+            # exact min_length
+            ([1, "abcd", 1], "B", 4, False, [(4, "abcd")]),
+            # multiple strings
+            (["hello", 1, "world"], "B", 4, False, [(0, "hello"), (24, "world")]),
+            # offset accuracy — large leading gap
+            ([3, "hello"], "B", 4, False, [(12, "hello")]),
+            # three strings
+            (
+                ["hello", 1, "world", 1, "test1"],
+                "B",
+                4,
+                False,
+                [(0, "hello"), (24, "world"), (48, "test1")],
+            ),
+            # tab extends run
+            (["hel\tlo"], "B", 4, True, [(0, "hel\tlo")]),
+            # tab breaks run when flag off
+            (["hel\tlo"], "B", 4, False, []),
+            # tab between two strings — merges them
+            (["hello\tworld"], "B", 4, True, [(0, "hello\tworld")]),
+            # tab between two strings — splits them
+            (["hello\tworld"], "B", 4, False, [(0, "hello"), (24, "world")]),
         ],
     )
     def test_scan(
         self,
         segments: list[str | int | bytes],
-        encoding: Literal["s", "S", "l", "b"],
+        encoding: Encoding,
         min_length: int,
         include_whitespace: bool,
         expected: list[tuple[int, str]],

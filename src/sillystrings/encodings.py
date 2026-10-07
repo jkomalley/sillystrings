@@ -2,7 +2,7 @@
 from collections.abc import Iterator
 from typing import Literal
 
-Encoding = Literal["s", "S", "l", "b"]
+Encoding = Literal["s", "S", "l", "b", "L", "B"]
 """The encodings sillystrings can scan for, in `strings`' own -e vocabulary."""
 
 ASCII_ENCODINGS = ("s", "S")
@@ -10,6 +10,8 @@ ASCII_ENCODINGS = ("s", "S")
 WIDE_ENCODINGS: dict[str, tuple[int, Literal["little", "big"]]] = {
     "l": (2, "little"),
     "b": (2, "big"),
+    "L": (4, "little"),
+    "B": (4, "big"),
 }
 """The multi-byte encodings, mapped to their character width and byte order."""
 
