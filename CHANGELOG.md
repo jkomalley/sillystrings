@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `-o` as shorthand for `-t o`, matching GNU `strings`. (#51)
 - `-e L` and `-e B` for 32-bit little- and big-endian characters, matching GNU
   `strings`. (#52)
+- `-d`/`--data` to scan only the data sections of a thin Mach-O file, and
+  `-a`/`--all` to scan the whole file (still the default), matching GNU
+  `strings`. (#54)
 
 ### Changed
 
