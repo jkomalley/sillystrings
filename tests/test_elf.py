@@ -3,7 +3,7 @@ import struct
 import pytest
 
 from sillystrings.formats.common import Section
-from sillystrings.formats.elf import data_sections
+from sillystrings.formats.elf import NAME_LIMIT, data_sections
 
 from .conftest import (
     EI_CLASS,
@@ -495,3 +495,21 @@ class TestMalformed:
         unterminated = bytearray(renamed)
         unterminated[offset + size - 1] = ord("X")
         assert names(data_sections(bytes(unterminated)))[0] == ".shstrtab"
+
+    def test_names_are_bounded(self) -> None:
+        # A name table with no NUL for its whole length, named into at many
+        # offsets, must not give each section a copy of the rest of it: names
+        # are cut at NAME_LIMIT bytes, so memory stays linear in the file
+        long_name = "." + "A" * (4 * NAME_LIMIT)
+        sections = [
+            ElfSection(long_name, b"x", flags=SHF_ALLOC),
+            *[
+                ElfSection(".x", b"x", flags=SHF_ALLOC, name_offset=offset)
+                for offset in range(2, 3 * NAME_LIMIT, 7)
+            ],
+        ]
+        result = data_sections(build_elf(sections))
+        assert result is not None
+        assert len(result) == len(sections)
+        assert result[0].name == long_name[:NAME_LIMIT]
+        assert all(len(section.name) <= NAME_LIMIT for section in result)
