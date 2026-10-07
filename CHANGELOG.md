@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `-o` as shorthand for `-t o`, matching GNU `strings`. (#51)
+
 ### Changed
 
 - Scanning with `-e s` and `-e S` is roughly 1.75x and 2x faster. (#50)

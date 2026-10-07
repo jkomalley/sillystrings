@@ -56,6 +56,15 @@ def test_offset_octal(tmp_path: Path) -> None:
     assert b"3 hello" in result.stdout
 
 
+def test_octal_shorthand_matches_radix_octal(tmp_path: Path) -> None:
+    f = tmp_path / "t.bin"
+    f.write_bytes(b"\x00" * 8 + b"hello\x00")
+    result = run(str(f), "-o")
+    assert result.returncode == 0
+    assert b"10 hello" in result.stdout
+    assert result.stdout == run(str(f), "-t", "o").stdout
+
+
 def test_stdin() -> None:
     result = run("-", data=b"\x00hello world\x00")
     assert result.returncode == 0
@@ -230,6 +239,20 @@ class TestBuildParser:
         assert args.encoding == "S"
         assert args.include_all_whitespace is True
         assert args.print_file_name is True
+
+    def test_octal_shorthand(self) -> None:
+        assert build_parser().parse_args(["-o"]).radix == "o"
+
+    # -o and -t share a destination, so the last one given wins, as in GNU strings
+    @pytest.mark.parametrize(
+        ("argv", "radix"),
+        [
+            (["-o", "-t", "x"], "x"),
+            (["-t", "x", "-o"], "o"),
+        ],
+    )
+    def test_octal_shorthand_last_wins(self, argv: list[str], radix: str) -> None:
+        assert build_parser().parse_args(argv).radix == radix
 
 
 Capture = pytest.CaptureFixture[str]
