@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scanning with `-e s` and `-e S` is roughly 1.75x and 2x faster. (#50)
 - Input files are memory-mapped and scanned one at a time, so memory use no longer grows with file size or file count. (#53)
 
+### Fixed
+
+- Exits 1 quietly, rather than printing "Exception ignored" and exiting 120, when the output pipe closes before buffered output is flushed. (#58)
+
 ## [0.1.0] - 2026-09-11
 
 ### Added
