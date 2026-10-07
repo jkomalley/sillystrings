@@ -42,6 +42,74 @@ class MachOSection:
     offset: int | None = None
 
 
+# The structs of <mach-o/loader.h>, field by field, as (name, struct format).
+# Written out in full rather than shared with the parser, so a field the parser
+# misplaces cannot be misplaced the same way here.
+_MACH_HEADER = [
+    ("magic", "I"),
+    ("cputype", "i"),
+    ("cpusubtype", "i"),
+    ("filetype", "I"),
+    ("ncmds", "I"),
+    ("sizeofcmds", "I"),
+    ("flags", "I"),
+]
+_MACH_HEADER_64 = [*_MACH_HEADER, ("reserved", "I")]
+_SEGMENT_COMMAND = [
+    ("cmd", "I"),
+    ("cmdsize", "I"),
+    ("segname", "16s"),
+    ("vmaddr", "I"),
+    ("vmsize", "I"),
+    ("fileoff", "I"),
+    ("filesize", "I"),
+    ("maxprot", "i"),
+    ("initprot", "i"),
+    ("nsects", "I"),
+    ("flags", "I"),
+]
+_SEGMENT_COMMAND_64 = [
+    (name, "Q" if name in {"vmaddr", "vmsize", "fileoff", "filesize"} else fmt)
+    for name, fmt in _SEGMENT_COMMAND
+]
+_SECTION = [
+    ("sectname", "16s"),
+    ("segname", "16s"),
+    ("addr", "I"),
+    ("size", "I"),
+    ("offset", "I"),
+    ("align", "I"),
+    ("reloff", "I"),
+    ("nreloc", "I"),
+    ("flags", "I"),
+    ("reserved1", "I"),
+    ("reserved2", "I"),
+]
+_SECTION_64 = [
+    *[(name, "Q" if name in {"addr", "size"} else fmt) for name, fmt in _SECTION],
+    ("reserved3", "I"),
+]
+_SYMTAB_COMMAND = [
+    ("cmd", "I"),
+    ("cmdsize", "I"),
+    ("symoff", "I"),
+    ("nsyms", "I"),
+    ("stroff", "I"),
+    ("strsize", "I"),
+]
+
+
+def _pack(fields: list[tuple[str, str]], endian: str, **values: int | bytes) -> bytes:
+    """Pack a struct by field name; fields not given are zero."""
+    fmt = endian + "".join(f for _, f in fields)
+    zero = {name: b"" if f.endswith("s") else 0 for name, f in fields}
+    return struct.pack(fmt, *({**zero, **values}[name] for name, _ in fields))
+
+
+def _size(fields: list[tuple[str, str]]) -> int:
+    return struct.calcsize("=" + "".join(f for _, f in fields))
+
+
 def build_macho(
     segments: Sequence[tuple[str, Sequence[MachOSection]]],
     *,
@@ -53,45 +121,53 @@ def build_macho(
 
     Each segment is a (segname, sections) pair. Sections with content get it
     laid out after the load commands, in order; sections without content get
-    offset 0, like zerofill. other_commands prepends that many non-segment
-    load commands, which a parser must step over. Fields the parser does not
-    read are zeroed by the pad bytes ("x") in the formats.
+    offset 0, like zerofill. other_commands prepends that many LC_SYMTAB load
+    commands, which a parser must step over.
     """
     e = ">" if big_endian else "<"
     if is_64:
-        magic, cmd = 0xFEEDFACF, 0x19  # LC_SEGMENT_64
-        # magic, cputype..filetype, ncmds, sizeofcmds, flags + reserved
-        header = struct.Struct(f"{e}I12xII8x")
-        # cmd, cmdsize, segname, vmaddr..filesize, maxprot, initprot, nsects, flags
-        segment = struct.Struct(f"{e}II16s32x8xI4x")
-        # sectname, segname, addr, size, offset, align..nreloc, flags, reserved1-3
-        section = struct.Struct(f"{e}16s16s8xQI12xI12x")
+        magic, cmd = 0xFEEDFACF, 0x19  # MH_MAGIC_64, LC_SEGMENT_64
+        header, segment, section = _MACH_HEADER_64, _SEGMENT_COMMAND_64, _SECTION_64
     else:
-        magic, cmd = 0xFEEDFACE, 0x1  # LC_SEGMENT
-        header = struct.Struct(f"{e}I12xII4x")
-        segment = struct.Struct(f"{e}II16s16x8xI4x")
-        section = struct.Struct(f"{e}16s16s4xII12xI8x")
-    symtab = struct.pack(f"{e}II16x", 0x2, 24)  # LC_SYMTAB, its body zeroed
+        magic, cmd = 0xFEEDFACE, 0x1  # MH_MAGIC, LC_SEGMENT
+        header, segment, section = _MACH_HEADER, _SEGMENT_COMMAND, _SECTION
+    symtab = _pack(_SYMTAB_COMMAND, e, cmd=0x2, cmdsize=_size(_SYMTAB_COMMAND))
 
     commands_size = len(symtab) * other_commands + sum(
-        segment.size + len(sections) * section.size for _, sections in segments
+        _size(segment) + len(sections) * _size(section) for _, sections in segments
     )
-    contents_start = header.size + commands_size
+    contents_start = _size(header) + commands_size
     commands = bytearray(symtab * other_commands)
     contents = bytearray()
     for segname, sections in segments:
-        cmdsize = segment.size + len(sections) * section.size
-        commands += segment.pack(cmd, cmdsize, segname.encode(), len(sections))
+        commands += _pack(
+            segment,
+            e,
+            cmd=cmd,
+            cmdsize=_size(segment) + len(sections) * _size(section),
+            segname=segname.encode(),
+            nsects=len(sections),
+        )
         for s in sections:
             offset = s.offset
             if offset is None:
                 offset = contents_start + len(contents) if s.content else 0
-            size = len(s.content) if s.size is None else s.size
-            names = (s.sectname.encode(), s.segname.encode())
-            commands += section.pack(*names, size, offset, s.flags)
+            commands += _pack(
+                section,
+                e,
+                sectname=s.sectname.encode(),
+                segname=s.segname.encode(),
+                size=len(s.content) if s.size is None else s.size,
+                offset=offset,
+                flags=s.flags,
+            )
             contents += s.content
     ncmds = other_commands + len(segments)
-    return header.pack(magic, ncmds, len(commands)) + commands + contents
+    return (
+        _pack(header, e, magic=magic, ncmds=ncmds, sizeofcmds=len(commands))
+        + commands
+        + contents
+    )
 
 
 @pytest.fixture(scope="session")
