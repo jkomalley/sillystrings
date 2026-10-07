@@ -52,16 +52,17 @@ the start of the file.
 | `-d` | Data sections | Whole file |
 
 `-a` and `-d` override each other, so the last one given wins. Thin Mach-O
-files (32- and 64-bit, either byte order) are recognized so far; ELF is
-[planned](https://github.com/jkomalley/sillystrings/issues/3). With `-d`:
+and ELF files (32- and 64-bit, either byte order) are recognized. With `-d`:
 
 - "Data" means every section loaded with content from the file, **code
-  included**. Zero-filled sections (such as `__bss`) and debug sections are
-  skipped.
+  included**. Zero-filled sections (such as `__bss` and `.bss`) are skipped,
+  and so are sections that aren't loaded, such as debug info and ELF's
+  `.comment` and symbol tables.
 - A section whose bytes lie outside the file is skipped, and the rest are
   scanned.
 - Everything else is scanned whole: fat (universal) Mach-O files, static
-  archives (`.a`), objects with no data sections, files that aren't a
+  archives (`.a`), ELF core dumps, ELF files with no section headers (such as
+  after `sstrip`), objects with no data sections, files that aren't a
   recognized object or can't be parsed, and stdin.
 
 Unlike GNU, where `-` is another spelling of `-a`, a `-` argument here means
@@ -85,7 +86,7 @@ Show hex offsets with 8-bit encoding:
 sillystrings -t x -e S firmware.bin
 ```
 
-Scan only the data sections of a Mach-O object:
+Scan only the data sections of an object file:
 
 ```
 sillystrings -d build/main.o
