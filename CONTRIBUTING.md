@@ -135,7 +135,7 @@ VM or container with `gcc` and `uv`.
 - Keep commits atomic — a single coherent change each, not a bundle of unrelated
   edits.
 - Follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat`,
-  `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `deps`).
+  `fix`, `perf`, `docs`, `chore`, `refactor`, `test`, `ci`, `deps`).
 - Reference the issue a PR resolves with `Closes #N`.
 - Include tests for any new or changed behavior.
 - Add a bullet under `## [Unreleased]` in `CHANGELOG.md` for any user-facing
@@ -164,7 +164,7 @@ bump and apply it locally:
 | Changes since last release | Bump | Command |
 | --- | --- | --- |
 | Any `feat:` | minor | `just bump-version minor` |
-| Only `fix:` / `docs:` / `chore:` | patch | `just bump-version patch` |
+| Only `fix:` / `perf:` / `docs:` / `chore:` | patch | `just bump-version patch` |
 | A breaking change (`feat!:`, `BREAKING CHANGE`) | minor (pre-1.0)¹ | `just bump-version minor` |
 
 ¹ While the project is pre-1.0, breaking changes are released as a **minor**
