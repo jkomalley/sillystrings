@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Exits 1 quietly, rather than printing "Exception ignored" and exiting 120, when the output pipe closes before buffered output is flushed. (#58)
+- Tab no longer ends a string, and `-w` now also includes vertical tab and form feed, matching GNU `strings`. This changes default output for any string containing a tab. (#59)
 - `-e S` writes bytes 0x80-0xFF as the raw bytes found, as GNU `strings` does, rather than UTF-8-encoding them. (#61)
 
 ## [0.1.0] - 2026-09-11
