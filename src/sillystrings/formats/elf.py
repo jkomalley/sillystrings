@@ -7,12 +7,10 @@ compiler. The rules for which sections count as data come from GNU binutils
 2.47 and cite the function they mirror.
 """
 
-import functools
-import struct
 from dataclasses import dataclass
-from typing import Annotated, NamedTuple, get_type_hints
+from typing import Annotated, NamedTuple
 
-from sillystrings.formats.common import Section
+from sillystrings.formats.common import Section, sizeof, unpack
 
 # --------------------------------------------------------------------------- #
 # Constants from <elf.h>
@@ -134,34 +132,6 @@ class Elf64_Shdr(NamedTuple):  # noqa: N801 -- the header's typedef name
     sh_entsize: Annotated[int, "Q"]  # Elf64_Xword sh_entsize
 
 
-@functools.cache
-def struct_format(cls: type[tuple]) -> str:
-    """Join a struct's per-field format codes, in field order, with no byte order.
-
-    Args:
-        cls (type[tuple]): One of the NamedTuple structs above.
-
-    Returns:
-        str: The struct module format for the whole C struct.
-    """
-    # Annotations keep the order the fields were declared in
-    hints = get_type_hints(cls, include_extras=True)
-    return "".join(hint.__metadata__[0] for hint in hints.values())
-
-
-def sizeof(cls: type[tuple]) -> int:
-    """The size of a C struct in bytes, like C's sizeof.
-
-    Args:
-        cls (type[tuple]): One of the NamedTuple structs above.
-
-    Returns:
-        int: The struct's size, from its field formats.
-    """
-    # Standard sizes and no alignment padding: elf.h's headers have none
-    return struct.calcsize("<" + struct_format(cls))
-
-
 # --------------------------------------------------------------------------- #
 # Parsing
 # --------------------------------------------------------------------------- #
@@ -180,14 +150,11 @@ class _Layout:
 
     def read_ehdr(self, data: bytes | memoryview) -> _Ehdr:
         """Unpack the ELF header at the start of data."""
-        return self.ehdr._make(self._unpack(self.ehdr, data, 0))
+        return self.ehdr._make(unpack(self.ehdr, self.byte_order, data, 0))
 
     def read_shdr(self, data: bytes | memoryview, offset: int) -> _Shdr:
         """Unpack the section header at offset."""
-        return self.shdr._make(self._unpack(self.shdr, data, offset))
-
-    def _unpack(self, cls: type[tuple], data: bytes | memoryview, offset: int) -> tuple:
-        return struct.unpack_from(self.byte_order + struct_format(cls), data, offset)
+        return self.shdr._make(unpack(self.shdr, self.byte_order, data, offset))
 
 
 # Keyed by (e_ident[EI_CLASS], e_ident[EI_DATA])
