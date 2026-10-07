@@ -32,8 +32,8 @@ responsibility:
 
 | Module | Responsibility |
 | --- | --- |
-| `encodings.py` | The encoding vocabulary (`Encoding`, `ASCII_ENCODINGS`, `WIDE_ENCODINGS`), the per-byte printability predicates, and `iter_chars` — which walks a buffer yielding `(offset, printable)`. |
-| `scanner.py` | `scan()` — the public API. Dispatches to the `_scan_ascii` / `_scan_wide` accumulators, which group runs of printable characters into strings meeting the minimum length. |
+| `encodings.py` | The encoding vocabulary (`Encoding`, `ASCII_ENCODINGS`, `WIDE_ENCODINGS`), the per-byte printability predicate, `iter_chars` — which walks an ASCII-encoded buffer yielding `(offset, printable)` — and `wide_string_pattern`, the regex the wide encodings are matched with. |
+| `scanner.py` | `scan()` — the public API. Dispatches to `_scan_ascii`, which groups runs of printable bytes into strings meeting the minimum length, or `_scan_wide`, which yields each regex match. |
 | `formats/` | Object file parsers for `-d`. `formats/__init__.py` has `data_ranges()`, which tries each format in turn; `formats/macho.py` and `formats/elf.py` find a Mach-O or ELF file's data sections; `formats/common.py` holds the shared `Section` record and the `sizeof`/`unpack` struct helpers. |
 | `cli.py` | The `sillystrings` command-line entry point: argparse wiring, offset formatting, and stdin/file input handling. |
 | `__version__.py` | The installed version, read from package metadata. |
@@ -114,10 +114,11 @@ to a format parser should be checked against GNU itself. On macOS,
 ```bash
 uv run scripts/compare_gnu.py /bin/ls build/foo.o some.dylib
 uv run scripts/compare_gnu.py --gnu /path/to/strings -n 8 file.o
+uv run scripts/compare_gnu.py -e l -e b -e L -e B /bin/ls
 ```
 
-It runs both tools with `-d` and with `-a`, at `-t d`, and prints a table; it
-exits 1 if any output differs.
+It runs both tools with `-d` and with `-a`, at `-t d`, in each encoding given
+with `-e` (default `s`), and prints a table; it exits 1 if any output differs.
 
 The structs and constants are checked separately, against the real system
 headers: `tests/test_macho_constants.py` and `tests/test_elf_constants.py` each

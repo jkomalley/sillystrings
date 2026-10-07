@@ -8,6 +8,7 @@ from sillystrings.encodings import (
     Encoding,
     iter_chars,
     unsupported_encoding,
+    wide_string_pattern,
 )
 
 
@@ -89,22 +90,16 @@ def _scan_wide(
     encoding: str,
     include_whitespace: bool,
 ) -> Iterator[tuple[int, str]]:
+    # GNU strings does not read on a fixed grid from offset 0: after a
+    # non-printable character it resumes one byte past where that character
+    # began. finditer finds exactly the same strings. The only offsets GNU
+    # skips are inside printable characters, and a printable character is one
+    # nonzero byte padded with NULs, so no character starting part-way into one
+    # is printable. finditer resumes at a match's end rather than one byte
+    # later, but the character there ended the match, so it cannot start one.
     width, byteorder = WIDE_ENCODINGS[encoding]
-    acc: list[str] = []
-    acc_start = 0
-
-    for offset, printable in iter_chars(data, encoding, include_ws=include_whitespace):
-        if printable:
-            if not acc:
-                acc_start = offset
-            char_value = int.from_bytes(
-                data[offset : offset + width], byteorder=byteorder
-            )
-            acc.append(chr(char_value))
-        else:
-            if len(acc) >= min_length:
-                yield acc_start, "".join(acc)
-            acc.clear()
-
-    if len(acc) >= min_length:
-        yield acc_start, "".join(acc)
+    # Every match is one printable byte per character; take just those bytes
+    low = 0 if byteorder == "little" else width - 1
+    pattern = wide_string_pattern(encoding, min_length, include_ws=include_whitespace)
+    for match in pattern.finditer(data):
+        yield match.start(), match[0][low::width].decode("ascii")
