@@ -362,6 +362,14 @@ def _in_file(data: bytes | memoryview, hdr: _Shdr) -> bool:
     return hdr.sh_offset + hdr.sh_size <= len(data)
 
 
+# Section names are only for display and tests; nothing filters on them. So a
+# name is cut at this many bytes rather than read to its terminator. Otherwise a
+# damaged name table with no NULs would give every section its own copy of the
+# rest of the table, quadratic in time and memory. Real names are far shorter,
+# apart from some C++ -ffunction-sections names, which are only shortened.
+NAME_LIMIT = 256
+
+
 def _string_table(data: bytes | memoryview, hdr: _Shdr) -> bytes | None:
     # Copied once, rather than per name, since a damaged header can make the
     # table as large as the file. binutils 2.47 bfd/elf.c,
@@ -380,5 +388,6 @@ def _name(table: bytes | None, offset: int) -> str | None:
     # The terminator left out of the table is still a valid place to start
     if table is None or offset > len(table):
         return None
-    end = table.find(b"\0", offset)
-    return table[offset : None if end == -1 else end].decode("latin-1")
+    # Read at most NAME_LIMIT bytes, stopping early at a NUL
+    end = table.find(b"\0", offset, offset + NAME_LIMIT)
+    return table[offset : offset + NAME_LIMIT if end == -1 else end].decode("latin-1")
