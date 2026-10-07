@@ -111,10 +111,11 @@ binaries you like:
 ```bash
 uv run scripts/compare_gnu.py /bin/ls build/foo.o some.dylib
 uv run scripts/compare_gnu.py --gnu /path/to/strings -n 8 file.o
+uv run scripts/compare_gnu.py -e l -e b -e L -e B /bin/ls
 ```
 
-It runs both tools with `-d` and with `-a`, at `-t d`, and prints a table; it
-exits 1 if any output differs.
+It runs both tools with `-d` and with `-a`, at `-t d`, in each encoding given
+with `-e` (default `s`), and prints a table; it exits 1 if any output differs.
 
 The Mach-O structs and constants are checked separately, against the real
 `<mach-o/loader.h>`: `tests/test_macho_constants.py` compiles a C program that
