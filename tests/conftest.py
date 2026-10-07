@@ -5,26 +5,27 @@ from pathlib import Path
 
 import pytest
 
+# encoding -> (codec for str segments, bytes per NUL character for int segments)
+_LAYOUTS = {
+    "s": ("ascii", 1),
+    "S": ("ascii", 1),
+    "l": ("utf-16-le", 2),
+    "b": ("utf-16-be", 2),
+    "L": ("utf-32-le", 4),
+    "B": ("utf-32-be", 4),
+}
+
 
 def make_data(segments: list[str | int | bytes], encoding: str) -> bytes:
+    codec, width = _LAYOUTS[encoding]
     result = bytearray()
     for segment in segments:
         if isinstance(segment, bytes):
             result += segment
         elif isinstance(segment, str):
-            match encoding:
-                case "s" | "S":
-                    result += segment.encode("ascii")
-                case "l":
-                    result += segment.encode("utf-16-le")
-                case "b":
-                    result += segment.encode("utf-16-be")
-        elif isinstance(segment, int):
-            match encoding:
-                case "s" | "S":
-                    result += b"\x00" * segment
-                case "l" | "b":
-                    result += b"\x00\x00" * segment
+            result += segment.encode(codec)
+        else:
+            result += b"\x00" * width * segment
     return bytes(result)
 
 

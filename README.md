@@ -29,7 +29,7 @@ With no file arguments, reads from stdin.
 | Flag | Description |
 |------|-------------|
 | `-n NUM` | Minimum string length (default: 4) |
-| `-e {s,S,l,b}` | Character encoding: `s` = 7-bit ASCII (default), `S` = 8-bit, `l` = UTF-16 LE, `b` = UTF-16 BE |
+| `-e {s,S,l,b,L,B}` | Character encoding: `s` = 7-bit ASCII (default), `S` = 8-bit, `l` = UTF-16 LE, `b` = UTF-16 BE, `L` = 32-bit LE, `B` = 32-bit BE |
 | `-t {d,o,x}` | Print byte offset before each string in decimal, octal, or hex |
 | `-o` | Same as `-t o` |
 | `-w` | Include all whitespace characters (newlines, carriage returns) in strings |
@@ -66,7 +66,7 @@ sillystrings -e l -n 8 program.exe
 
 The project is organized into three layers:
 
-- **encodings** -- character-level printability checks for ASCII and UTF-16
+- **encodings** -- character-level printability checks for ASCII and 16- and 32-bit wide characters
 - **scanner** -- accumulates printable runs into strings, tracks byte offsets
 - **cli** -- argument parsing, file I/O, output formatting
 
