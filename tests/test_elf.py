@@ -424,11 +424,20 @@ class TestMalformed:
     def test_corrupt_header(self, data: bytes, name: str, value: int) -> None:
         assert data_sections(patch_ehdr(data, name, value)) is None
 
-    @pytest.mark.parametrize("count", [0, SHN_LORESERVE, 2**64 - 1])
+    @pytest.mark.parametrize("count", [0, 2**64 - 1])
     def test_bad_extended_count(self, count: int) -> None:
-        # Section 0 must hold a count between 1 and SHN_LORESERVE - 1
+        # No count at all, or a table that runs past the end of the file
         data = build_elf([rodata()], extended=True)
         assert data_sections(patch_shdr(data, 0, "sh_size", count)) is None
+
+    def test_extended_count_past_elf_h_limit(self) -> None:
+        # Extended numbering exists for SHN_LORESERVE or more sections, and BFD
+        # accepts such counts: its own SHN_LORESERVE is 0xffffff00. The extra
+        # headers are SHT_NULL, as zeros.
+        data = build_elf([rodata()], extended=True)
+        data += bytes(SHN_LORESERVE * sizeof(ELF64_SHDR))
+        large = patch_shdr(data, 0, "sh_size", SHN_LORESERVE)
+        assert names(data_sections(large)) == [".rodata"]
 
     @pytest.mark.parametrize(
         ("field", "value"),
