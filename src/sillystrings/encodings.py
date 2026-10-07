@@ -1,4 +1,6 @@
 # src/sillystrings/encodings.py
+import functools
+import re
 from collections.abc import Iterator
 from typing import Literal
 
@@ -62,31 +64,50 @@ def is_printable_ascii(
     return (0x20 <= byte <= 0x7E) or (0x80 <= byte <= 0xFF)
 
 
-def is_printable_wide(value: int, *, include_ws: bool = False) -> bool:
-    """Check if a multi-byte character value is printable.
+@functools.cache
+def wide_string_pattern(
+    encoding: str, min_length: int, *, include_ws: bool = False
+) -> re.Pattern[bytes]:
+    """Compile a regex matching a run of printable multi-byte characters.
+
+    A character is printable when its value is one `is_printable_ascii` accepts
+    for "s": GNU strings applies the same test to every encoding, so a wide
+    character is one printable byte padded with NULs. The pattern matches
+    ``min_length`` or more such characters, as many as follow.
 
     Args:
-        value (int): The decoded character value to check.
+        encoding (str): A WIDE_ENCODINGS key.
+        min_length (int): The fewest characters a match may have.
         include_ws (bool): Whether to also treat newline, vertical tab, form
             feed, and carriage return as printable. Tab is always printable.
             Default is False.
 
     Returns:
-        bool: True if the character value is printable, False otherwise.
+        re.Pattern[bytes]: The compiled pattern, cached per argument tuple.
     """
-    if value == TAB or (include_ws and value in OTHER_WHITESPACE):
-        return True
-    return 0x0020 <= value <= 0x007E
+    width, byteorder = WIDE_ENCODINGS[encoding]
+    printable = b"".join(
+        b"\\x%02x" % b
+        for b in range(256)
+        if is_printable_ascii(b, "s", include_ws=include_ws)
+    )
+    char = b"[" + printable + b"]"
+    padding = b"\\x00" * (width - 1)
+    char = char + padding if byteorder == "little" else padding + char
+    return re.compile(b"(?:" + char + b"){%d,}" % min_length)
 
 
 def iter_chars(
     data: bytes | memoryview, encoding: str, *, include_ws: bool = False
 ) -> Iterator[tuple[int, bool]]:
-    """Iterate over the chars in a byte sequence, yielding offset and printability.
+    """Iterate over the bytes in a buffer, yielding offset and printability.
+
+    Only the single-byte encodings are walked a byte at a time; the wide ones
+    are matched whole by `wide_string_pattern` instead.
 
     Args:
         data (bytes | memoryview): The byte sequence to iterate over.
-        encoding (str): The encoding to use for checking printability.
+        encoding (str): The ASCII_ENCODINGS member to check printability for.
         include_ws (bool): Whether to include whitespace characters as
             printable. Default is False.
 
@@ -95,7 +116,7 @@ def iter_chars(
             indicating if it's printable.
 
     Raises:
-        ValueError: If the encoding is not an Encoding member.
+        ValueError: If the encoding is not an ASCII_ENCODINGS member.
     """
     if encoding in ASCII_ENCODINGS:
         # The answer depends only on the byte once encoding and include_ws are
@@ -104,11 +125,5 @@ def iter_chars(
             is_printable_ascii(b, encoding, include_ws=include_ws) for b in range(256)
         )
         yield from enumerate(map(table.__getitem__, data))
-    elif encoding in WIDE_ENCODINGS:
-        width, byteorder = WIDE_ENCODINGS[encoding]
-        # A trailing partial character is never yielded, so it cannot start a run
-        for i in range(0, len(data) - width + 1, width):
-            char_value = int.from_bytes(data[i : i + width], byteorder=byteorder)
-            yield i, is_printable_wide(char_value, include_ws=include_ws)
     else:
         raise unsupported_encoding(encoding)

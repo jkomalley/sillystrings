@@ -170,6 +170,30 @@ class TestScanner:
             (["hello\tworld"], "l", 4, False, [(0, "hello\tworld")]),
             # odd trailing byte — silently ignored, string still extracted
             (["hello", b"\x41"], "l", 4, False, [(0, "hello")]),
+            # --- unaligned strings and where scanning resumes (#64) ---
+            # odd start — a string need not sit on a multiple of the width
+            ([b"X", "hello", 1], "l", 4, False, [(1, "hello")]),
+            # a failed character resumes one byte past its start, not on the grid
+            (["ab", b"\x01", "cdef", 1], "l", 4, False, [(5, "cdef")]),
+            # same while extending a string already long enough
+            (
+                ["hello", b"\x01", "world", 1],
+                "l",
+                4,
+                False,
+                [(0, "hello"), (11, "world")],
+            ),
+            # min_length=1 — strings either side of a stray byte
+            (["ab", b"\x01", "c", 1], "l", 1, False, [(0, "ab"), (5, "c")]),
+            # trailing partial character after an unaligned string
+            ([b"X", "hello", b"A"], "l", 4, False, [(1, "hello")]),
+            # EOF mid-character before min_length is reached — nothing
+            ([b"X", "abc", b"d"], "l", 4, False, []),
+            # whitespace breaks an unaligned string only without -w
+            ([b"X", "ab\ncd", 1], "l", 2, False, [(1, "ab"), (7, "cd")]),
+            ([b"X", "ab\rcd", 1], "l", 2, True, [(1, "ab\rcd")]),
+            # the same bytes read big-endian are "abcd" at offset 0 (see 'b')
+            ([b"\x00a\x00b\x00c\x00d\x00"], "l", 4, False, [(1, "abcd")]),
             # -----------------------------------------------------------------------
             # encoding='b' — UTF-16 big-endian
             # -----------------------------------------------------------------------
@@ -210,6 +234,30 @@ class TestScanner:
             (["hello\tworld"], "b", 4, True, [(0, "hello\tworld")]),
             # tab between two strings — merges them when flag off too
             (["hello\tworld"], "b", 4, False, [(0, "hello\tworld")]),
+            # --- unaligned strings and where scanning resumes (#64) ---
+            # odd start — a string need not sit on a multiple of the width
+            ([b"X", "hello", 1], "b", 4, False, [(1, "hello")]),
+            # a failed character resumes one byte past its start, not on the grid
+            (["ab", b"\x01", "cdef", 1], "b", 4, False, [(5, "cdef")]),
+            # same while extending a string already long enough
+            (
+                ["hello", b"\x01", "world", 1],
+                "b",
+                4,
+                False,
+                [(0, "hello"), (11, "world")],
+            ),
+            # min_length=1 — strings either side of a stray byte
+            (["ab", b"\x01", "c", 1], "b", 1, False, [(0, "ab"), (5, "c")]),
+            # trailing partial character after an unaligned string
+            ([b"X", "hello", b"A"], "b", 4, False, [(1, "hello")]),
+            # EOF mid-character before min_length is reached — nothing
+            ([b"X", "abc", b"d"], "b", 4, False, []),
+            # whitespace breaks an unaligned string only without -w
+            ([b"X", "ab\ncd", 1], "b", 2, False, [(1, "ab"), (7, "cd")]),
+            ([b"X", "ab\rcd", 1], "b", 2, True, [(1, "ab\rcd")]),
+            # the same bytes read little-endian are "abcd" at offset 1 (see 'l')
+            ([b"\x00a\x00b\x00c\x00d\x00"], "b", 4, False, [(0, "abcd")]),
             # -----------------------------------------------------------------------
             # encoding='L' — 32-bit little-endian
             # -----------------------------------------------------------------------
@@ -260,6 +308,30 @@ class TestScanner:
                 False,
                 [(0, "hel"), (16, "lo")],
             ),
+            # --- unaligned strings and where scanning resumes (#64) ---
+            # odd start — a string need not sit on a multiple of the width
+            ([b"X", "hello", 1], "L", 4, False, [(1, "hello")]),
+            ([b"XY", "hello", 1], "L", 4, False, [(2, "hello")]),
+            ([b"XYZ", "hello", 1], "L", 4, False, [(3, "hello")]),
+            # a failed character resumes one byte past its start, not on the grid
+            (["ab", b"\x01", "cdef", 1], "L", 4, False, [(9, "cdef")]),
+            # same while extending a string already long enough
+            (
+                ["hello", b"\x01", "world", 1],
+                "L",
+                4,
+                False,
+                [(0, "hello"), (21, "world")],
+            ),
+            # min_length=1 — strings either side of a stray byte
+            (["ab", b"\x01", "c", 1], "L", 1, False, [(0, "ab"), (9, "c")]),
+            # trailing partial character after an unaligned string
+            ([b"X", "hello", b"A"], "L", 4, False, [(1, "hello")]),
+            # EOF mid-character before min_length is reached — nothing
+            ([b"X", "abc", b"d"], "L", 4, False, []),
+            # whitespace breaks an unaligned string only without -w
+            ([b"X", "ab\ncd", 1], "L", 2, False, [(1, "ab"), (13, "cd")]),
+            ([b"X", "ab\rcd", 1], "L", 2, True, [(1, "ab\rcd")]),
             # -----------------------------------------------------------------------
             # encoding='B' — 32-bit big-endian
             # -----------------------------------------------------------------------
@@ -300,6 +372,30 @@ class TestScanner:
             (["hello\tworld"], "B", 4, True, [(0, "hello\tworld")]),
             # tab between two strings — merges them when flag off too
             (["hello\tworld"], "B", 4, False, [(0, "hello\tworld")]),
+            # --- unaligned strings and where scanning resumes (#64) ---
+            # odd start — a string need not sit on a multiple of the width
+            ([b"X", "hello", 1], "B", 4, False, [(1, "hello")]),
+            ([b"XY", "hello", 1], "B", 4, False, [(2, "hello")]),
+            ([b"XYZ", "hello", 1], "B", 4, False, [(3, "hello")]),
+            # a failed character resumes one byte past its start, not on the grid
+            (["ab", b"\x01", "cdef", 1], "B", 4, False, [(9, "cdef")]),
+            # same while extending a string already long enough
+            (
+                ["hello", b"\x01", "world", 1],
+                "B",
+                4,
+                False,
+                [(0, "hello"), (21, "world")],
+            ),
+            # min_length=1 — strings either side of a stray byte
+            (["ab", b"\x01", "c", 1], "B", 1, False, [(0, "ab"), (9, "c")]),
+            # trailing partial character after an unaligned string
+            ([b"X", "hello", b"A"], "B", 4, False, [(1, "hello")]),
+            # EOF mid-character before min_length is reached — nothing
+            ([b"X", "abc", b"d"], "B", 4, False, []),
+            # whitespace breaks an unaligned string only without -w
+            ([b"X", "ab\ncd", 1], "B", 2, False, [(1, "ab"), (13, "cd")]),
+            ([b"X", "ab\rcd", 1], "B", 2, True, [(1, "ab\rcd")]),
         ],
     )
     def test_scan(
