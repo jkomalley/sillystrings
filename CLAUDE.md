@@ -47,7 +47,7 @@ Key design decisions:
 ## Workflow
 
 - Every feature, fix, or other change gets its own branch and pull request — no direct commits to main.
-- Commits must be atomic and follow Conventional Commits (`feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `deps`): one logical change per commit.
+- Commits must be atomic and follow Conventional Commits (`feat`, `fix`, `perf`, `docs`, `chore`, `refactor`, `test`, `ci`, `deps`): one logical change per commit. Use `perf` for a speed or memory improvement that leaves output unchanged. Users notice it, so it gets a `### Changed` CHANGELOG entry, unlike `refactor`.
 - PRs that resolve an issue reference it with `Closes #N` so it closes automatically on merge.
 - **PRs are merged with a merge commit** — never squashed or rebased. Both break stacked PRs, and this project family works in stacks.
 - **Bring a PR branch up to date by merging `main` into it, never by rebasing, and never force-push.** Review happens commit by commit, so history already reviewed must not change.
