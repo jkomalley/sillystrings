@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `-o` as shorthand for `-t o`, matching GNU `strings`. (#51)
+- `-e L` and `-e B` for 32-bit little- and big-endian characters, matching GNU
+  `strings`. (#52)
 
 ### Changed
 
