@@ -1,6 +1,6 @@
 from sillystrings.formats import data_ranges
 
-from .conftest import ElfSection, MachOSection, build_elf, build_macho
+from .conftest import S_ZEROFILL, ElfSection, MachOSection, build_elf, build_macho
 from .test_elf import SHF_ALLOC, SHF_EXECINSTR
 
 
@@ -47,6 +47,6 @@ class TestDataRanges:
 
     def test_no_data_sections_is_none(self) -> None:
         # GNU strings scans the whole file when -d found no section to scan
-        bss = MachOSection("__DATA", "__bss", size=64, flags=0x1)
+        bss = MachOSection("__DATA", "__bss", size=64, flags=S_ZEROFILL)
         assert data_ranges(build_macho([("__DATA", [bss])])) is None
         assert data_ranges(build_macho([])) is None
