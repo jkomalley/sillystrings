@@ -66,15 +66,15 @@ class TestIsPrintableAscii:
             # DEL — still excluded even with include_ws and 'S'
             (0x7F, "S", True, False),
             (0x80, "S", True, True),  # high byte still printable
-            # --- encoding='l' (UTF-16 LE) — always False, handled by iter_chars ---
+            # --- encoding='l' (UTF-16 LE) — always False, matched by regex ---
             (0x41, "l", False, False),  # 'A' — not handled by is_printable
             (0x20, "l", False, False),  # space — not handled by is_printable
             (0x09, "l", True, False),  # \t with include_ws — still False
-            # --- encoding='b' (UTF-16 BE) — always False, handled by iter_chars ---
+            # --- encoding='b' (UTF-16 BE) — always False, matched by regex ---
             (0x41, "b", False, False),  # 'A' — not handled by is_printable
             (0x20, "b", False, False),  # space — not handled by is_printable
             (0x09, "b", True, False),  # \t with include_ws — still False
-            # --- encoding='L'/'B' (32-bit) — always False, handled by iter_chars ---
+            # --- encoding='L'/'B' (32-bit) — always False, matched by regex ---
             (0x41, "L", False, False),  # 'A' — not handled by is_printable
             (0x41, "B", False, False),  # 'A' — not handled by is_printable
         ],
@@ -88,7 +88,7 @@ class TestIsPrintableAscii:
         )
 
 
-class TestIsPrintableWide:
+class TestWideStringPattern:
     @pytest.mark.parametrize(
         ("value", "include_ws", "expected"),
         [
@@ -137,10 +137,34 @@ class TestIsPrintableWide:
             (0xFFFFFFFF, True, False),  # max 32-bit value
         ],
     )
-    def test_is_printable_wide(
+    def test_character_values(
         self, value: int, include_ws: bool, expected: bool
     ) -> None:
-        assert encodings.is_printable_wide(value, include_ws=include_ws) == expected
+        for encoding, (width, byteorder) in encodings.WIDE_ENCODINGS.items():
+            # 32-bit values cannot be written in the 16-bit encodings at all
+            if value < 1 << (8 * width):
+                char = value.to_bytes(width, byteorder)
+                pattern = encodings.wide_string_pattern(
+                    encoding, 1, include_ws=include_ws
+                )
+                assert (pattern.fullmatch(char) is not None) == expected, encoding
+
+    @pytest.mark.parametrize(
+        ("data", "encoding", "matched"),
+        [
+            (b"a\x00", "l", False),  # one character short of min_length=2
+            (b"a\x00b\x00", "l", True),  # exactly min_length
+            (b"a\x00b\x00c\x00", "l", True),  # more than min_length
+            (b"a\x00b\x00c", "l", False),  # trailing partial character
+            (b"\x00a\x00b", "b", True),
+            (b"a\x00\x00\x00b\x00\x00\x00", "L", True),
+            (b"\x00\x00\x00a\x00\x00\x00b", "B", True),
+            (b"a\x00\x00\x00b\x00\x00\x00", "B", False),  # wrong byte order
+        ],
+    )
+    def test_min_length(self, data: bytes, encoding: str, matched: bool) -> None:
+        pattern = encodings.wide_string_pattern(encoding, 2)
+        assert (pattern.fullmatch(data) is not None) == matched
 
 
 class TestIterChars:
@@ -200,95 +224,6 @@ class TestIterChars:
             # ws + high byte both printable
             (b"\x09\x80", "S", True, [(0, True), (1, True)]),
             (b"\x09\x80", "S", False, [(0, True), (1, True)]),  # same, flag off
-            # --- encoding='l' (UTF-16 LE), include_ws=False ---
-            (b"", "l", False, []),
-            # "hi" in UTF-16 LE
-            (b"\x68\x00\x69\x00", "l", False, [(0, True), (2, True)]),
-            # single non-printable pair
-            (b"\x00\x00", "l", False, [(0, False)]),
-            # non-ASCII codepoint — low byte in range but high byte non-zero
-            (b"\x41\x01", "l", False, [(0, False)]),
-            # mixed: non-printable then printable
-            (b"\x00\x00\x41\x00", "l", False, [(0, False), (2, True)]),
-            # odd-length data — last byte silently ignored
-            (b"\x68\x00\x69", "l", False, [(0, True)]),
-            # single byte — too short to form a pair, yields nothing
-            (b"\x68", "l", False, []),
-            # --- encoding='l' (UTF-16 LE), include_ws=True ---
-            (b"\x09\x00", "l", True, [(0, True)]),  # \t in UTF-16 LE
-            (b"\x09\x00", "l", False, [(0, True)]),  # same, flag off
-            (b"\x0b\x00", "l", True, [(0, True)]),  # \v — included
-            (b"\x0b\x00", "l", False, [(0, False)]),  # same, flag off
-            (b"\x0c\x00", "l", True, [(0, True)]),  # \f — included
-            (b"\x0c\x00", "l", False, [(0, False)]),  # same, flag off
-            # --- encoding='b' (UTF-16 BE), include_ws=False ---
-            (b"", "b", False, []),
-            # "hi" in UTF-16 BE
-            (b"\x00\x68\x00\x69", "b", False, [(0, True), (2, True)]),
-            # non-printable pair
-            (b"\x00\x00", "b", False, [(0, False)]),
-            # non-ASCII codepoint — high byte non-zero
-            (b"\x01\x41", "b", False, [(0, False)]),
-            # mixed
-            (b"\x00\x00\x00\x41", "b", False, [(0, False), (2, True)]),
-            # odd-length data — last byte silently ignored
-            (b"\x00\x68\x00", "b", False, [(0, True)]),
-            # single byte — too short to form a pair, yields nothing
-            (b"\x68", "b", False, []),
-            # --- encoding='b' (UTF-16 BE), include_ws=True ---
-            (b"\x00\x09", "b", True, [(0, True)]),  # \t in UTF-16 BE
-            (b"\x00\x09", "b", False, [(0, True)]),  # same, flag off
-            (b"\x00\x0b", "b", True, [(0, True)]),  # \v — included
-            (b"\x00\x0b", "b", False, [(0, False)]),  # same, flag off
-            (b"\x00\x0c", "b", True, [(0, True)]),  # \f — included
-            (b"\x00\x0c", "b", False, [(0, False)]),  # same, flag off
-            # --- encoding='L' (32-bit LE), include_ws=False ---
-            (b"", "L", False, []),
-            # "hi" in UTF-32 LE
-            (b"h\x00\x00\x00i\x00\x00\x00", "L", False, [(0, True), (4, True)]),
-            # non-printable quad
-            (b"\x00\x00\x00\x00", "L", False, [(0, False)]),
-            # low byte in range but upper bytes non-zero — each upper byte matters
-            (b"\x41\x01\x00\x00", "L", False, [(0, False)]),
-            (b"\x41\x00\x01\x00", "L", False, [(0, False)]),
-            (b"\x41\x00\x00\x01", "L", False, [(0, False)]),
-            # mixed: non-printable then printable
-            (b"\x00\x00\x00\x00A\x00\x00\x00", "L", False, [(0, False), (4, True)]),
-            # trailing partial character — 1 to 3 leftover bytes silently ignored
-            (b"h\x00\x00\x00i", "L", False, [(0, True)]),
-            (b"h\x00\x00\x00i\x00\x00", "L", False, [(0, True)]),
-            # shorter than one character — yields nothing
-            (b"h\x00\x00", "L", False, []),
-            # --- encoding='L' (32-bit LE), include_ws=True ---
-            (b"\x09\x00\x00\x00", "L", True, [(0, True)]),  # \t in UTF-32 LE
-            (b"\x09\x00\x00\x00", "L", False, [(0, True)]),  # same, flag off
-            (b"\x0b\x00\x00\x00", "L", True, [(0, True)]),  # \v — included
-            (b"\x0b\x00\x00\x00", "L", False, [(0, False)]),  # same, flag off
-            (b"\x0c\x00\x00\x00", "L", True, [(0, True)]),  # \f — included
-            (b"\x0c\x00\x00\x00", "L", False, [(0, False)]),  # same, flag off
-            # --- encoding='B' (32-bit BE), include_ws=False ---
-            (b"", "B", False, []),
-            # "hi" in UTF-32 BE
-            (b"\x00\x00\x00h\x00\x00\x00i", "B", False, [(0, True), (4, True)]),
-            # non-printable quad
-            (b"\x00\x00\x00\x00", "B", False, [(0, False)]),
-            # low byte in range but upper bytes non-zero — each upper byte matters
-            (b"\x00\x00\x01\x41", "B", False, [(0, False)]),
-            (b"\x00\x01\x00\x41", "B", False, [(0, False)]),
-            (b"\x01\x00\x00\x41", "B", False, [(0, False)]),
-            # mixed
-            (b"\x00\x00\x00\x00\x00\x00\x00A", "B", False, [(0, False), (4, True)]),
-            # trailing partial character — silently ignored
-            (b"\x00\x00\x00h\x00\x00\x00", "B", False, [(0, True)]),
-            # shorter than one character — yields nothing
-            (b"\x00\x00\x00", "B", False, []),
-            # --- encoding='B' (32-bit BE), include_ws=True ---
-            (b"\x00\x00\x00\x09", "B", True, [(0, True)]),  # \t in UTF-32 BE
-            (b"\x00\x00\x00\x09", "B", False, [(0, True)]),  # same, flag off
-            (b"\x00\x00\x00\x0b", "B", True, [(0, True)]),  # \v — included
-            (b"\x00\x00\x00\x0b", "B", False, [(0, False)]),  # same, flag off
-            (b"\x00\x00\x00\x0c", "B", True, [(0, True)]),  # \f — included
-            (b"\x00\x00\x00\x0c", "B", False, [(0, False)]),  # same, flag off
         ],
     )
     def test_iter_chars(
