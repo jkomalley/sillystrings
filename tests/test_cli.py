@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 from pytest_mock import MockerFixture
 
-from sillystrings.cli import build_parser, format_offset, main, positive_int
+from sillystrings.cli import (
+    build_parser,
+    format_offset,
+    main,
+    open_source,
+    positive_int,
+)
 
 
 def run(*args: str, data: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
@@ -348,6 +354,44 @@ class TestMain:
         main()
         assert capsys.readouterr().out.strip() != ""
 
+    def test_empty_file(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        f = tmp_path / "empty.bin"
+        f.write_bytes(b"")
+        mocker.patch("sys.argv", ["sillystrings", str(f)])
+        main()
+        assert capsys.readouterr().out == ""
+
+    def test_missing_later_file_prints_nothing(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        # Paths are checked before any scanning, so a bad path late in the
+        # list still fails the run without partial output
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"\x00hello\x00")
+        mocker.patch("sys.argv", ["sillystrings", str(f), "nonexistent.bin"])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "nonexistent.bin: No such file" in captured.err
+
+    def test_multiple_files_in_order_with_own_offsets(
+        self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
+    ) -> None:
+        f1 = tmp_path / "a.bin"
+        f2 = tmp_path / "b.bin"
+        f1.write_bytes(b"\x00hello\x00")
+        f2.write_bytes(b"\x00\x00world\x00")
+        mocker.patch("sys.argv", ["sillystrings", "-t", "d", str(f1), str(f2)])
+        main()
+        assert capsys.readouterr().out.splitlines() == [
+            f"{f1}:       1 hello",
+            f"{f2}:       2 world",
+        ]
+
     def test_whitespace_passthrough(
         self, tmp_path: Path, mocker: MockerFixture, capsys: Capture
     ) -> None:
@@ -360,6 +404,38 @@ class TestMain:
         assert "7 world" not in out
 
 
+class TestOpenSource:
+    def test_file_is_mapped(self, tmp_path: Path) -> None:
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"\x00hello\x00")
+        with open_source(str(f)) as source:
+            assert source.name == str(f)
+            assert isinstance(source.data, memoryview)
+            assert bytes(source.data) == b"\x00hello\x00"
+
+    def test_mapping_is_released_on_exit(self, tmp_path: Path) -> None:
+        f = tmp_path / "t.bin"
+        f.write_bytes(b"hello")
+        with open_source(str(f)) as source:
+            data = source.data
+        with pytest.raises(ValueError, match="released"):
+            bytes(data)
+
+    def test_empty_file_is_read_not_mapped(self, tmp_path: Path) -> None:
+        f = tmp_path / "empty.bin"
+        f.write_bytes(b"")
+        with open_source(str(f)) as source:
+            assert source.data == b""
+
+    def test_stdin(self, mocker: MockerFixture) -> None:
+        fake_stdin = mocker.Mock()
+        fake_stdin.buffer = BytesIO(b"hello")
+        mocker.patch("sys.stdin", fake_stdin)
+        with open_source("-") as source:
+            assert source.name == "<stdin>"
+            assert source.data == b"hello"
+
+
 @pytest.mark.parametrize("value", ["0", "-1"])
 def test_positive_int_rejects_non_positive(value: str) -> None:
     with pytest.raises(argparse.ArgumentTypeError):
@@ -367,15 +443,24 @@ def test_positive_int_rejects_non_positive(value: str) -> None:
 
 
 class TestBrokenPipe:
+    # Both scan paths, since the pipe closes while the file is still mapped: a
+    # view the scanner kept alive would make releasing the mapping raise
+    # BufferError over the BrokenPipeError
+    @pytest.mark.parametrize("encoding", ["s", "l"])
     def test_main_exits_quietly_when_the_pipe_closes(
-        self, tmp_path: Path, mocker: MockerFixture, capsys: pytest.CaptureFixture[str]
+        self,
+        encoding: str,
+        tmp_path: Path,
+        mocker: MockerFixture,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         # `sillystrings big.bin | head` closes stdout while we are still
         # writing. Without handling, that surfaces as a BrokenPipeError
         # traceback -- on the tool's most common invocation.
         f = tmp_path / "t.bin"
-        f.write_bytes(b"hello world\x00second string here\x00")
-        mocker.patch.object(sys, "argv", ["sillystrings", str(f)])
+        text = "hello world\x00second string here\x00"
+        f.write_bytes(text.encode("ascii" if encoding == "s" else "utf-16-le"))
+        mocker.patch.object(sys, "argv", ["sillystrings", "-e", encoding, str(f)])
         mocker.patch("builtins.print", side_effect=BrokenPipeError)
 
         with pytest.raises(SystemExit) as exc:
