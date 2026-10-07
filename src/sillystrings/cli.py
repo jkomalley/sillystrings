@@ -11,6 +11,7 @@ from typing import get_args
 
 from sillystrings.__version__ import __version__
 from sillystrings.encodings import Encoding
+from sillystrings.formats import data_ranges
 from sillystrings.scanner import scan
 
 
@@ -158,6 +159,29 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "-a",
+        "--all",
+        dest="data_only",
+        action="store_const",
+        const=False,
+        default=False,
+        help="Scan the whole file, whatever its format. This is the default.",
+    )
+    parser.add_argument(
+        "-d",
+        "--data",
+        dest="data_only",
+        action="store_const",
+        const=True,
+        help=(
+            "Only scan the sections of an object file that are loaded into"
+            " memory from the file, as GNU strings -d does: code and data, but"
+            " not debug info or zero-filled sections. Thin Mach-O files are"
+            " recognized. Any other file, including a fat Mach-O file, or one"
+            " with no such sections, is scanned whole."
+        ),
+    )
+    parser.add_argument(
         "-f",
         "--print-file-name",
         action="store_true",
@@ -234,15 +258,39 @@ def _run() -> None:
     # One source is open at a time, so peak memory does not grow with the
     # number of files
     for name in names:
-        with open_source(name) as source:
+        with open_source(name) as source, memoryview(source.data) as view:
             prefix = f"{source.name}: " if (multiple or args.print_file_name) else ""
-            for offset, string in scan(
-                source.data,
-                min_length=args.min_length,
-                encoding=args.encoding,
-                include_whitespace=args.include_all_whitespace,
-            ):
-                print(f"{prefix}{format_offset(offset, args.radix)}{string}")
+            # GNU strings ignores -d for stdin and scans the stream whole
+            data_only = args.data_only and name != "-"
+            for start, size in _ranges(view, data_only=data_only):
+                # Released explicitly, since a slice still alive when the block
+                # exits -- as on a broken pipe -- stops the file being unmapped
+                with view[start : start + size] as chunk:
+                    for offset, string in scan(
+                        chunk,
+                        min_length=args.min_length,
+                        encoding=args.encoding,
+                        include_whitespace=args.include_all_whitespace,
+                    ):
+                        print(
+                            f"{prefix}{format_offset(start + offset, args.radix)}"
+                            f"{string}"
+                        )
+
+
+def _ranges(data: memoryview, *, data_only: bool) -> list[tuple[int, int]]:
+    """Choose the (offset, size) byte ranges of a source to scan.
+
+    Args:
+        data (memoryview): The whole source.
+        data_only (bool): Whether only the data sections were asked for, by -d.
+
+    Returns:
+        list[tuple[int, int]]: The data sections of a recognized object file
+            under -d, otherwise the whole source.
+    """
+    ranges = data_ranges(data) if data_only else None
+    return [(0, len(data))] if ranges is None else ranges
 
 
 if __name__ == "__main__":
