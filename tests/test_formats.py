@@ -1,7 +1,14 @@
 from sillystrings.formats import data_ranges
 
-from .conftest import S_ZEROFILL, ElfSection, MachOSection, build_elf, build_macho
-from .test_elf import SHF_ALLOC, SHF_EXECINSTR
+from .conftest import (
+    S_ZEROFILL,
+    SHF_ALLOC,
+    SHF_EXECINSTR,
+    ElfSection,
+    MachOSection,
+    build_elf,
+    build_macho,
+)
 
 
 class TestDataRanges:

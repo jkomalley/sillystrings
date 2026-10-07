@@ -231,11 +231,147 @@ def build_macho(
     )
 
 
+# --- ELF, transcribed from <elf.h> ---
+#
+# Deliberately independent of sillystrings.formats.elf -- nothing is shared --
+# so a field or constant the parser gets wrong cannot be wrong the same way
+# here. tests/test_elf_constants.py checks both against the real header.
+
+EI_MAG0 = 0  # elf.h: #define EI_MAG0 0
+ELFMAG0 = 0x7F  # elf.h: #define ELFMAG0 0x7f
+ELFMAG1 = ord("E")  # elf.h: #define ELFMAG1 'E'
+ELFMAG2 = ord("L")  # elf.h: #define ELFMAG2 'L'
+ELFMAG3 = ord("F")  # elf.h: #define ELFMAG3 'F'
+SELFMAG = 4  # elf.h: #define SELFMAG 4
+EI_CLASS = 4  # elf.h: #define EI_CLASS 4
+EI_DATA = 5  # elf.h: #define EI_DATA 5
+EI_VERSION = 6  # elf.h: #define EI_VERSION 6
+ELFCLASSNONE = 0  # elf.h: #define ELFCLASSNONE 0
+ELFCLASS32 = 1  # elf.h: #define ELFCLASS32 1
+ELFCLASS64 = 2  # elf.h: #define ELFCLASS64 2
+ELFDATANONE = 0  # elf.h: #define ELFDATANONE 0
+ELFDATA2LSB = 1  # elf.h: #define ELFDATA2LSB 1
+ELFDATA2MSB = 2  # elf.h: #define ELFDATA2MSB 2
+EV_NONE = 0  # elf.h: #define EV_NONE 0
+EV_CURRENT = 1  # elf.h: #define EV_CURRENT 1
+ET_NONE = 0  # elf.h: #define ET_NONE 0
+ET_REL = 1  # elf.h: #define ET_REL 1
+ET_EXEC = 2  # elf.h: #define ET_EXEC 2
+ET_DYN = 3  # elf.h: #define ET_DYN 3
+ET_CORE = 4  # elf.h: #define ET_CORE 4
+ET_LOOS = 0xFE00  # elf.h: #define ET_LOOS 0xfe00
+EM_PPC = 20  # elf.h: #define EM_PPC 20
+SHN_UNDEF = 0  # elf.h: #define SHN_UNDEF 0
+SHN_LORESERVE = 0xFF00  # elf.h: #define SHN_LORESERVE 0xff00
+SHN_XINDEX = 0xFFFF  # elf.h: #define SHN_XINDEX 0xffff
+SHT_NULL = 0  # elf.h: #define SHT_NULL 0
+SHT_PROGBITS = 1  # elf.h: #define SHT_PROGBITS 1
+SHT_SYMTAB = 2  # elf.h: #define SHT_SYMTAB 2
+SHT_STRTAB = 3  # elf.h: #define SHT_STRTAB 3
+SHT_RELA = 4  # elf.h: #define SHT_RELA 4
+SHT_HASH = 5  # elf.h: #define SHT_HASH 5
+SHT_DYNAMIC = 6  # elf.h: #define SHT_DYNAMIC 6
+SHT_NOTE = 7  # elf.h: #define SHT_NOTE 7
+SHT_NOBITS = 8  # elf.h: #define SHT_NOBITS 8
+SHT_REL = 9  # elf.h: #define SHT_REL 9
+SHT_SHLIB = 10  # elf.h: #define SHT_SHLIB 10
+SHT_DYNSYM = 11  # elf.h: #define SHT_DYNSYM 11
+SHT_INIT_ARRAY = 14  # elf.h: #define SHT_INIT_ARRAY 14
+SHT_SYMTAB_SHNDX = 18  # elf.h: #define SHT_SYMTAB_SHNDX 18
+SHT_LOOS = 0x60000000  # elf.h: #define SHT_LOOS 0x60000000
+SHT_GNU_HASH = 0x6FFFFFF6  # elf.h: #define SHT_GNU_HASH 0x6ffffff6
+SHF_WRITE = 1 << 0  # elf.h: #define SHF_WRITE (1 << 0)
+SHF_ALLOC = 1 << 1  # elf.h: #define SHF_ALLOC (1 << 1)
+SHF_EXECINSTR = 1 << 2  # elf.h: #define SHF_EXECINSTR (1 << 2)
+SHF_INFO_LINK = 1 << 6  # elf.h: #define SHF_INFO_LINK (1 << 6)
+SHF_COMPRESSED = 1 << 11  # elf.h: #define SHF_COMPRESSED (1 << 11)
+
+# Each struct as (field name, struct format code), in header order:
+# B = unsigned char, H = uint16_t (Elf32_Half, Elf64_Half), I = uint32_t
+# (Elf32_Word, Elf32_Addr, Elf32_Off, Elf64_Word), Q = uint64_t (Elf64_Xword,
+# Elf64_Addr, Elf64_Off), q = int64_t (Elf64_Sxword),
+# 16s = unsigned char[EI_NIDENT]
+ELF32_EHDR: Fields = [  # Elf32_Ehdr
+    ("e_ident", "16s"),  # unsigned char[EI_NIDENT]
+    ("e_type", "H"),  # Elf32_Half
+    ("e_machine", "H"),  # Elf32_Half
+    ("e_version", "I"),  # Elf32_Word
+    ("e_entry", "I"),  # Elf32_Addr
+    ("e_phoff", "I"),  # Elf32_Off
+    ("e_shoff", "I"),  # Elf32_Off
+    ("e_flags", "I"),  # Elf32_Word
+    ("e_ehsize", "H"),  # Elf32_Half
+    ("e_phentsize", "H"),  # Elf32_Half
+    ("e_phnum", "H"),  # Elf32_Half
+    ("e_shentsize", "H"),  # Elf32_Half
+    ("e_shnum", "H"),  # Elf32_Half
+    ("e_shstrndx", "H"),  # Elf32_Half
+]
+ELF64_EHDR: Fields = [  # Elf64_Ehdr
+    ("e_ident", "16s"),  # unsigned char[EI_NIDENT]
+    ("e_type", "H"),  # Elf64_Half
+    ("e_machine", "H"),  # Elf64_Half
+    ("e_version", "I"),  # Elf64_Word
+    ("e_entry", "Q"),  # Elf64_Addr
+    ("e_phoff", "Q"),  # Elf64_Off
+    ("e_shoff", "Q"),  # Elf64_Off
+    ("e_flags", "I"),  # Elf64_Word
+    ("e_ehsize", "H"),  # Elf64_Half
+    ("e_phentsize", "H"),  # Elf64_Half
+    ("e_phnum", "H"),  # Elf64_Half
+    ("e_shentsize", "H"),  # Elf64_Half
+    ("e_shnum", "H"),  # Elf64_Half
+    ("e_shstrndx", "H"),  # Elf64_Half
+]
+ELF32_SHDR: Fields = [  # Elf32_Shdr
+    ("sh_name", "I"),  # Elf32_Word
+    ("sh_type", "I"),  # Elf32_Word
+    ("sh_flags", "I"),  # Elf32_Word
+    ("sh_addr", "I"),  # Elf32_Addr
+    ("sh_offset", "I"),  # Elf32_Off
+    ("sh_size", "I"),  # Elf32_Word
+    ("sh_link", "I"),  # Elf32_Word
+    ("sh_info", "I"),  # Elf32_Word
+    ("sh_addralign", "I"),  # Elf32_Word
+    ("sh_entsize", "I"),  # Elf32_Word
+]
+ELF64_SHDR: Fields = [  # Elf64_Shdr
+    ("sh_name", "I"),  # Elf64_Word
+    ("sh_type", "I"),  # Elf64_Word
+    ("sh_flags", "Q"),  # Elf64_Xword
+    ("sh_addr", "Q"),  # Elf64_Addr
+    ("sh_offset", "Q"),  # Elf64_Off
+    ("sh_size", "Q"),  # Elf64_Xword
+    ("sh_link", "I"),  # Elf64_Word
+    ("sh_info", "I"),  # Elf64_Word
+    ("sh_addralign", "Q"),  # Elf64_Xword
+    ("sh_entsize", "Q"),  # Elf64_Xword
+]
+# The table entries tests give their sections, for sh_entsize
+ELF64_SYM: Fields = [  # Elf64_Sym
+    ("st_name", "I"),  # Elf64_Word
+    ("st_info", "B"),  # unsigned char
+    ("st_other", "B"),  # unsigned char
+    ("st_shndx", "H"),  # Elf64_Section (uint16_t)
+    ("st_value", "Q"),  # Elf64_Addr
+    ("st_size", "Q"),  # Elf64_Xword
+]
+ELF64_REL: Fields = [  # Elf64_Rel
+    ("r_offset", "Q"),  # Elf64_Addr
+    ("r_info", "Q"),  # Elf64_Xword
+]
+ELF64_RELA: Fields = [  # Elf64_Rela
+    ("r_offset", "Q"),  # Elf64_Addr
+    ("r_info", "Q"),  # Elf64_Xword
+    ("r_addend", "q"),  # Elf64_Sxword
+]
+
+
 @dataclass(frozen=True)
 class ElfSection:
     name: str
     content: bytes = b""
-    type: int = 1  # SHT_PROGBITS
+    type: int = SHT_PROGBITS
     flags: int = 0
     link: int = 0
     info: int = 0
@@ -246,55 +382,12 @@ class ElfSection:
     name_offset: int | None = None
 
 
-# The structs of <elf.h>, field by field, as (name, struct format). As with the
-# Mach-O structs above, nothing here is shared with the parser.
-_ELF32_EHDR = [
-    ("e_ident", "16s"),
-    ("e_type", "H"),
-    ("e_machine", "H"),
-    ("e_version", "I"),
-    ("e_entry", "I"),
-    ("e_phoff", "I"),
-    ("e_shoff", "I"),
-    ("e_flags", "I"),
-    ("e_ehsize", "H"),
-    ("e_phentsize", "H"),
-    ("e_phnum", "H"),
-    ("e_shentsize", "H"),
-    ("e_shnum", "H"),
-    ("e_shstrndx", "H"),
-]
-_ELF64_EHDR = [
-    (name, "Q" if name in {"e_entry", "e_phoff", "e_shoff"} else fmt)
-    for name, fmt in _ELF32_EHDR
-]
-_ELF32_SHDR = [
-    ("sh_name", "I"),
-    ("sh_type", "I"),
-    ("sh_flags", "I"),
-    ("sh_addr", "I"),
-    ("sh_offset", "I"),
-    ("sh_size", "I"),
-    ("sh_link", "I"),
-    ("sh_info", "I"),
-    ("sh_addralign", "I"),
-    ("sh_entsize", "I"),
-]
-_ELF64_SHDR = [
-    (
-        name,
-        "I" if name in {"sh_name", "sh_type", "sh_link", "sh_info"} else "Q",
-    )
-    for name, _ in _ELF32_SHDR
-]
-
-
 def build_elf(
     sections: Sequence[ElfSection],
     *,
     is_64: bool = True,
     big_endian: bool = False,
-    e_type: int = 1,  # ET_REL
+    e_type: int = ET_REL,
     extended: bool = False,
 ) -> bytes:
     """Build an ELF file: header, section contents, names, then the headers.
@@ -305,18 +398,21 @@ def build_elf(
     files with SHN_LORESERVE or more sections must.
     """
     e = ">" if big_endian else "<"
-    ehdr, shdr = (_ELF64_EHDR, _ELF64_SHDR) if is_64 else (_ELF32_EHDR, _ELF32_SHDR)
-    # EI_MAG0-3, EI_CLASS (ELFCLASS32/64), EI_DATA (ELFDATA2LSB/MSB), EI_VERSION
-    ident = b"\x7fELF" + bytes([2 if is_64 else 1, 2 if big_endian else 1, 1])
+    ehdr, shdr = (ELF64_EHDR, ELF64_SHDR) if is_64 else (ELF32_EHDR, ELF32_SHDR)
+    ident = bytearray(EI_VERSION + 1)
+    ident[:EI_CLASS] = bytes([ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3])
+    ident[EI_CLASS] = ELFCLASS64 if is_64 else ELFCLASS32
+    ident[EI_DATA] = ELFDATA2MSB if big_endian else ELFDATA2LSB
+    ident[EI_VERSION] = EV_CURRENT
 
     # The name string table goes last among the contents, and names itself
-    all_sections = [*sections, ElfSection(".shstrtab", type=3)]  # SHT_STRTAB
+    all_sections = [*sections, ElfSection(".shstrtab", type=SHT_STRTAB)]
     names = bytearray(b"\0")
     name_offsets = []
     for s in all_sections:
         name_offsets.append(len(names))
         names += s.name.encode() + b"\0"
-    all_sections[-1] = ElfSection(".shstrtab", bytes(names), type=3)
+    all_sections[-1] = ElfSection(".shstrtab", bytes(names), type=SHT_STRTAB)
 
     contents_start = sizeof(ehdr)
     contents = bytearray()
@@ -340,19 +436,22 @@ def build_elf(
         )
     shnum, shstrndx = len(headers), len(headers) - 1
     headers[0] = _pack(
-        shdr, e, sh_size=shnum if extended else 0, sh_link=shstrndx if extended else 0
+        shdr,
+        e,
+        sh_size=shnum if extended else 0,
+        sh_link=shstrndx if extended else SHN_UNDEF,
     )
     header = _pack(
         ehdr,
         e,
-        e_ident=ident,
+        e_ident=bytes(ident),
         e_type=e_type,
-        e_version=1,  # EV_CURRENT
+        e_version=EV_CURRENT,
         e_shoff=contents_start + len(contents),
         e_ehsize=sizeof(ehdr),
         e_shentsize=sizeof(shdr),
-        e_shnum=0 if extended else shnum,  # SHN_UNDEF
-        e_shstrndx=0xFFFF if extended else shstrndx,  # SHN_XINDEX
+        e_shnum=SHN_UNDEF if extended else shnum,
+        e_shstrndx=SHN_XINDEX if extended else shstrndx,
     )
     return header + contents + b"".join(headers)
 

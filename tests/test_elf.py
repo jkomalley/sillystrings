@@ -5,49 +5,66 @@ import pytest
 from sillystrings.formats.common import Section
 from sillystrings.formats.elf import data_sections
 
-from .conftest import ElfSection, build_elf
+from .conftest import (
+    EI_CLASS,
+    EI_DATA,
+    EI_VERSION,
+    ELF64_EHDR,
+    ELF64_REL,
+    ELF64_RELA,
+    ELF64_SHDR,
+    ELF64_SYM,
+    ELFCLASS32,
+    ELFCLASS64,
+    ELFCLASSNONE,
+    ELFDATA2MSB,
+    ELFDATANONE,
+    ELFMAG0,
+    ELFMAG1,
+    ELFMAG2,
+    ELFMAG3,
+    EM_PPC,
+    ET_CORE,
+    ET_DYN,
+    ET_EXEC,
+    ET_LOOS,
+    ET_NONE,
+    ET_REL,
+    EV_CURRENT,
+    EV_NONE,
+    SHF_ALLOC,
+    SHF_COMPRESSED,
+    SHF_EXECINSTR,
+    SHF_INFO_LINK,
+    SHF_WRITE,
+    SHN_LORESERVE,
+    SHN_UNDEF,
+    SHT_DYNAMIC,
+    SHT_DYNSYM,
+    SHT_GNU_HASH,
+    SHT_HASH,
+    SHT_INIT_ARRAY,
+    SHT_LOOS,
+    SHT_NOBITS,
+    SHT_NOTE,
+    SHT_NULL,
+    SHT_PROGBITS,
+    SHT_REL,
+    SHT_RELA,
+    SHT_SHLIB,
+    SHT_STRTAB,
+    SHT_SYMTAB,
+    SHT_SYMTAB_SHNDX,
+    ElfSection,
+    build_elf,
+    offsetof,
+    sizeof,
+)
 
-# elf.h: ET_REL 1, ET_EXEC 2, ET_DYN 3, ET_CORE 4
-ET_REL, ET_EXEC, ET_DYN, ET_CORE = 1, 2, 3, 4
-# elf.h: SHT_* section types
-SHT_NULL = 0
-SHT_PROGBITS = 1
-SHT_SYMTAB = 2
-SHT_STRTAB = 3
-SHT_RELA = 4
-SHT_HASH = 5
-SHT_DYNAMIC = 6
-SHT_NOTE = 7
-SHT_NOBITS = 8
-SHT_REL = 9
-SHT_SHLIB = 10
-SHT_DYNSYM = 11
-SHT_INIT_ARRAY = 14
-SHT_SYMTAB_SHNDX = 18
-SHT_GNU_HASH = 0x6FFFFFF6
-SHT_LOOS = 0x60000000
-# elf.h: SHF_WRITE (1 << 0), SHF_ALLOC (1 << 1), SHF_EXECINSTR (1 << 2),
-# SHF_INFO_LINK (1 << 6), SHF_COMPRESSED (1 << 11)
-SHF_WRITE = 1 << 0
-SHF_ALLOC = 1 << 1
-SHF_EXECINSTR = 1 << 2
-SHF_INFO_LINK = 1 << 6
-SHF_COMPRESSED = 1 << 11
-# elf.h: Elf64_Sym and Elf64_Rela are 24 bytes, Elf64_Rel 16
-SYM_SIZE = RELA_SIZE = 24
-REL_SIZE = 16
+SYM_SIZE, REL_SIZE, RELA_SIZE = sizeof(ELF64_SYM), sizeof(ELF64_REL), sizeof(ELF64_RELA)
 
 # Every word size and byte order, as (is_64, big_endian)
 VARIANTS = [(True, False), (True, True), (False, False), (False, True)]
-
-# Byte offsets in a 64-bit file, from the field order of Elf64_Ehdr and
-# Elf64_Shdr in elf.h
-EI_CLASS, EI_DATA, EI_VERSION = 4, 5, 6
-E_TYPE = 16
-E_SHOFF = 40
-E_SHENTSIZE, E_SHNUM, E_SHSTRNDX = 58, 60, 62
-SH_NAME, SH_TYPE, SH_FLAGS, SH_OFFSET, SH_SIZE = 0, 4, 8, 24, 32
-SHDR_SIZE = 64
 
 
 def names(result: list[Section] | None) -> list[str]:
@@ -59,17 +76,39 @@ def rodata(**kwargs: int) -> ElfSection:
     return ElfSection(".rodata", b"hello\0", flags=SHF_ALLOC, **kwargs)
 
 
-def patch(data: bytes, fmt: str, offset: int, value: int) -> bytes:
+# The helpers below read and patch 64-bit little-endian files by field name
+def _field(fields: list[tuple[str, str]], name: str) -> tuple[str, int]:
+    return "<" + dict(fields)[name], offsetof(fields, name)
+
+
+def read_ehdr(data: bytes, name: str) -> int:
+    fmt, offset = _field(ELF64_EHDR, name)
+    return struct.unpack_from(fmt, data, offset)[0]
+
+
+def patch_ehdr(data: bytes, name: str, value: int) -> bytes:
+    fmt, offset = _field(ELF64_EHDR, name)
     patched = bytearray(data)
-    struct.pack_into("<" + fmt, patched, offset, value)
+    struct.pack_into(fmt, patched, offset, value)
     return bytes(patched)
 
 
-def patch_shdr(data: bytes, index: int, field: int, value: int) -> bytes:
-    """Overwrite one field of a 64-bit little-endian section header."""
-    (shoff,) = struct.unpack_from("<Q", data, E_SHOFF)
-    fmt = "I" if field in {SH_NAME, SH_TYPE} else "Q"
-    return patch(data, fmt, shoff + index * SHDR_SIZE + field, value)
+def _shdr_field(data: bytes, index: int, name: str) -> tuple[str, int]:
+    fmt, offset = _field(ELF64_SHDR, name)
+    table = read_ehdr(data, "e_shoff") + index * sizeof(ELF64_SHDR)
+    return fmt, table + offset
+
+
+def read_shdr(data: bytes, index: int, name: str) -> int:
+    fmt, offset = _shdr_field(data, index, name)
+    return struct.unpack_from(fmt, data, offset)[0]
+
+
+def patch_shdr(data: bytes, index: int, name: str, value: int) -> bytes:
+    fmt, offset = _shdr_field(data, index, name)
+    patched = bytearray(data)
+    struct.pack_into(fmt, patched, offset, value)
+    return bytes(patched)
 
 
 class TestDataSections:
@@ -157,9 +196,9 @@ class TestDataSections:
 
     def test_the_null_section_is_never_scanned(self) -> None:
         data = build_elf([rodata()])
-        loaded = patch_shdr(data, 0, SH_FLAGS, SHF_ALLOC)
-        loaded = patch_shdr(loaded, 0, SH_OFFSET, data.index(b"hello"))
-        loaded = patch_shdr(loaded, 0, SH_SIZE, 6)
+        loaded = patch_shdr(data, 0, "sh_flags", SHF_ALLOC)
+        loaded = patch_shdr(loaded, 0, "sh_offset", data.index(b"hello"))
+        loaded = patch_shdr(loaded, 0, "sh_size", 6)
         assert names(data_sections(loaded)) == [".rodata"]
 
     def test_section_names_may_be_empty(self) -> None:
@@ -212,10 +251,10 @@ class TestTables:
 
     def test_the_name_table_is_not_a_section(self) -> None:
         data = build_elf([rodata()])
-        shstrndx = struct.unpack_from("<H", data, E_SHSTRNDX)[0]
-        assert names(data_sections(patch_shdr(data, shstrndx, SH_FLAGS, 2))) == [
-            ".rodata"
-        ]
+        shstrndx = read_ehdr(data, "e_shstrndx")
+        assert names(
+            data_sections(patch_shdr(data, shstrndx, "sh_flags", SHF_ALLOC))
+        ) == [".rodata"]
 
     @staticmethod
     def _rela(**kwargs: int) -> ElfSection:
@@ -264,19 +303,24 @@ def test_hand_assembled_big_endian_32_bit_object() -> None:
     # .rodata at index 1 and .shstrtab at index 2
     data = bytearray(204)
     put = struct.pack_into
-    # e_ident: magic, ELFCLASS32, ELFDATA2MSB, EV_CURRENT
-    data[0:7] = b"\x7fELF\x01\x02\x01"
+    # Elf32_Ehdr at 0 (52 bytes): e_ident[16], then e_type, e_machine (Half),
+    # e_version, e_entry, e_phoff, e_shoff, e_flags (4 bytes each), then six
+    # Halfs from e_ehsize at 40
+    data[0:7] = bytes(
+        [ELFMAG0, ELFMAG1, ELFMAG2, ELFMAG3, ELFCLASS32, ELFDATA2MSB, EV_CURRENT]
+    )
     put(">H", data, 16, ET_REL)  # e_type
-    put(">H", data, 18, 20)  # e_machine: EM_PPC
-    put(">I", data, 20, 1)  # e_version
-    put(">I", data, 32, 84)  # e_shoff
+    put(">H", data, 18, EM_PPC)  # e_machine
+    put(">I", data, 20, EV_CURRENT)  # e_version
+    put(">I", data, 32, 84)  # e_shoff: after the contents, 4-aligned
     put(">H", data, 40, 52)  # e_ehsize
-    put(">H", data, 46, 40)  # e_shentsize
+    put(">H", data, 46, 40)  # e_shentsize: sizeof(Elf32_Shdr), ten Words
     put(">H", data, 48, 3)  # e_shnum
     put(">H", data, 50, 2)  # e_shstrndx
     data[52:62] = b"hello ppc\0"
     data[62:81] = b"\0.rodata\0.shstrtab\0"
-    # Elf32_Shdr: sh_name at 0, sh_type 4, sh_flags 8, sh_offset 16, sh_size 20
+    # Elf32_Shdr: sh_name at 0, sh_type 4, sh_flags 8, sh_addr 12, sh_offset 16,
+    # sh_size 20 (Words, Addrs and Offs are all 4 bytes)
     for index, (name, sh_type, flags, offset, size) in enumerate(
         [(1, SHT_PROGBITS, SHF_ALLOC, 52, 10), (9, SHT_STRTAB, 0, 62, 19)], start=1
     ):
@@ -307,11 +351,11 @@ class TestNotElf:
     @pytest.mark.parametrize(
         ("offset", "value"),
         [
-            (EI_CLASS, 0),  # ELFCLASSNONE
-            (EI_CLASS, 3),
-            (EI_DATA, 0),  # ELFDATANONE
-            (EI_DATA, 3),
-            (EI_VERSION, 0),  # EV_NONE
+            (EI_CLASS, ELFCLASSNONE),
+            (EI_CLASS, ELFCLASS64 + 1),
+            (EI_DATA, ELFDATANONE),
+            (EI_DATA, ELFDATA2MSB + 1),
+            (EI_VERSION, EV_NONE),
         ],
     )
     def test_bad_identification_is_none(self, offset: int, value: int) -> None:
@@ -323,7 +367,7 @@ class TestNotElf:
         # BFD opens a core file as a core dump, not an object
         assert data_sections(build_elf([rodata()], e_type=ET_CORE)) is None
 
-    @pytest.mark.parametrize("e_type", [0, ET_REL, ET_EXEC, ET_DYN, 0xFE00])
+    @pytest.mark.parametrize("e_type", [ET_NONE, ET_REL, ET_EXEC, ET_DYN, ET_LOOS])
     def test_other_types_are_objects(self, e_type: int) -> None:
         assert names(data_sections(build_elf([rodata()], e_type=e_type))) == [".rodata"]
 
@@ -335,16 +379,17 @@ class TestNoSections:
         # As left by sstrip, or a hand-built file: BFD does not make sections
         # from the program headers
         data = build_elf([rodata()])
-        (shoff,) = struct.unpack_from("<Q", data, E_SHOFF)
-        stripped = patch(patch(data[:shoff], "Q", E_SHOFF, 0), "H", E_SHNUM, 0)
-        assert data_sections(patch(stripped, "H", E_SHSTRNDX, 0)) == []
+        stripped = data[: read_ehdr(data, "e_shoff")]
+        stripped = patch_ehdr(stripped, "e_shoff", 0)
+        stripped = patch_ehdr(stripped, "e_shnum", 0)
+        assert data_sections(patch_ehdr(stripped, "e_shstrndx", SHN_UNDEF)) == []
 
-    @pytest.mark.parametrize("shstrndx", [0, 1, 3, 0xFEFF])
+    @pytest.mark.parametrize("shstrndx", [SHN_UNDEF, 1, 3, SHN_LORESERVE - 1])
     def test_unusable_name_table_index(self, shstrndx: int) -> None:
         # 0 is SHN_UNDEF, 1 is .rodata, not a string table, and 3 is past the
         # end. BFD resets a bad index to SHN_UNDEF, then makes no sections.
         data = build_elf([rodata()])
-        assert data_sections(patch(data, "H", E_SHSTRNDX, shstrndx)) == []
+        assert data_sections(patch_ehdr(data, "e_shstrndx", shstrndx)) == []
 
 
 class TestMalformed:
@@ -367,29 +412,27 @@ class TestMalformed:
             assert data_sections(data[:length]) is None, length
 
     @pytest.mark.parametrize(
-        ("fmt", "offset", "value"),
+        ("name", "value"),
         [
-            ("H", E_SHENTSIZE, 40),  # Elf32_Shdr's size in a 64-bit file
-            ("Q", E_SHOFF, 63),  # inside the ELF header
-            ("Q", E_SHOFF, 2**64 - 1),  # past the end of the file
-            ("H", E_SHNUM, 0xFFFF),  # more headers than the file holds
-            ("Q", E_SHOFF, 0),  # sections, but no table
+            ("e_shentsize", sizeof(ELF64_SHDR) - 1),
+            ("e_shoff", sizeof(ELF64_EHDR) - 1),  # inside the ELF header
+            ("e_shoff", 2**64 - 1),  # past the end of the file
+            ("e_shnum", 2**16 - 1),  # more headers than the file holds
+            ("e_shoff", 0),  # sections, but no table
         ],
     )
-    def test_corrupt_header(
-        self, data: bytes, fmt: str, offset: int, value: int
-    ) -> None:
-        assert data_sections(patch(data, fmt, offset, value)) is None
+    def test_corrupt_header(self, data: bytes, name: str, value: int) -> None:
+        assert data_sections(patch_ehdr(data, name, value)) is None
 
-    @pytest.mark.parametrize("count", [0, 0xFF00, 2**64 - 1])
+    @pytest.mark.parametrize("count", [0, SHN_LORESERVE, 2**64 - 1])
     def test_bad_extended_count(self, count: int) -> None:
         # Section 0 must hold a count between 1 and SHN_LORESERVE - 1
         data = build_elf([rodata()], extended=True)
-        assert data_sections(patch_shdr(data, 0, SH_SIZE, count)) is None
+        assert data_sections(patch_shdr(data, 0, "sh_size", count)) is None
 
     @pytest.mark.parametrize(
         ("field", "value"),
-        [(SH_SIZE, 0x10000), (SH_SIZE, 2**64 - 1), (SH_OFFSET, 0xFFFFFFF0)],
+        [("sh_size", 0x10000), ("sh_size", 2**64 - 1), ("sh_offset", 0xFFFFFFF0)],
     )
     def test_section_outside_the_file_is_skipped(
         self, data: bytes, field: int, value: int
@@ -399,18 +442,18 @@ class TestMalformed:
 
     def test_section_ending_at_the_end_of_the_file(self) -> None:
         data = build_elf([rodata()]) + b"tail"
-        moved = patch_shdr(data, 1, SH_OFFSET, len(data) - 4)
-        moved = patch_shdr(moved, 1, SH_SIZE, 4)
+        moved = patch_shdr(data, 1, "sh_offset", len(data) - 4)
+        moved = patch_shdr(moved, 1, "sh_size", 4)
         assert data_sections(moved) == [Section(".rodata", len(data) - 4, 4)]
-        assert names(data_sections(patch_shdr(moved, 1, SH_SIZE, 5))) == []
+        assert names(data_sections(patch_shdr(moved, 1, "sh_size", 5))) == []
 
     def test_note_outside_the_file_is_none(self, data: bytes) -> None:
         # BFD reads every note while opening the object, loaded or not, and
         # rejects the object when it cannot
-        assert data_sections(patch_shdr(data, 3, SH_SIZE, 0x10000)) is None
+        assert data_sections(patch_shdr(data, 3, "sh_size", 0x10000)) is None
 
     def test_empty_note_is_not_read(self, data: bytes) -> None:
-        empty = patch_shdr(patch_shdr(data, 3, SH_SIZE, 0), 3, SH_OFFSET, 2**40)
+        empty = patch_shdr(patch_shdr(data, 3, "sh_size", 0), 3, "sh_offset", 2**40)
         assert names(data_sections(empty)) == [".rodata", ".data"]
 
     def test_skipped_sections_are_not_bounds_checked(self) -> None:
@@ -422,35 +465,33 @@ class TestMalformed:
     def test_unreadable_name_is_none(self, data: bytes, index: int) -> None:
         # BFD looks up every name but section 0's, scanned or not, and rejects
         # the object when one lies outside the name table
-        patched = patch_shdr(data, index, SH_NAME, 0x10000)
+        patched = patch_shdr(data, index, "sh_name", 0x10000)
         if index == 0:
             assert names(data_sections(patched)) == [".rodata", ".data"]
         else:
             assert data_sections(patched) is None
 
     def test_name_table_outside_the_file_is_none(self, data: bytes) -> None:
-        shstrndx = struct.unpack_from("<H", data, E_SHSTRNDX)[0]
-        assert data_sections(patch_shdr(data, shstrndx, SH_OFFSET, 2**40)) is None
+        shstrndx = read_ehdr(data, "e_shstrndx")
+        assert data_sections(patch_shdr(data, shstrndx, "sh_offset", 2**40)) is None
 
     def test_empty_name_table(self, data: bytes) -> None:
-        shstrndx = struct.unpack_from("<H", data, E_SHSTRNDX)[0]
-        empty = patch_shdr(data, shstrndx, SH_SIZE, 0)
+        shstrndx = read_ehdr(data, "e_shstrndx")
+        empty = patch_shdr(data, shstrndx, "sh_size", 0)
         assert data_sections(empty) is None
         # ...unless every section has the empty name, which needs no table
         for index in range(1, shstrndx + 1):
-            empty = patch_shdr(empty, index, SH_NAME, 0)
+            empty = patch_shdr(empty, index, "sh_name", 0)
         assert names(data_sections(empty)) == ["", ""]
 
     def test_unterminated_name_table(self, data: bytes) -> None:
         # BFD treats the table's last byte as a terminator, whatever it holds
-        shstrndx = struct.unpack_from("<H", data, E_SHSTRNDX)[0]
-        (shoff,) = struct.unpack_from("<Q", data, E_SHOFF)
-        header = shoff + shstrndx * SHDR_SIZE
-        (offset,) = struct.unpack_from("<Q", data, header + SH_OFFSET)
-        (size,) = struct.unpack_from("<Q", data, header + SH_SIZE)
+        shstrndx = read_ehdr(data, "e_shstrndx")
+        offset = read_shdr(data, shstrndx, "sh_offset")
+        size = read_shdr(data, shstrndx, "sh_size")
         # Make .rodata's name the last one in the table, then drop its NUL
         last = data.rindex(b"\0", offset, offset + size - 1) + 1
-        renamed = patch_shdr(data, 1, SH_NAME, last - offset)
+        renamed = patch_shdr(data, 1, "sh_name", last - offset)
         unterminated = bytearray(renamed)
         unterminated[offset + size - 1] = ord("X")
         assert names(data_sections(bytes(unterminated)))[0] == ".shstrtab"
