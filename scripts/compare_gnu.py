@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Compare sillystrings with GNU strings, for -d and -a, on any files.
 
-Usage: uv run scripts/compare_gnu.py [--gnu PATH] [-n MIN] FILE [FILE ...]
+Usage: uv run scripts/compare_gnu.py [--gnu PATH] [-n MIN] [-e ENC ...] FILE [FILE ...]
 Requires: a GNU strings that understands your files' formats. On macOS,
 `brew install binutils` provides one that reads Mach-O; it is keg-only, so it
 does not shadow the system strings. That is the default for --gnu.
 
-For each file and mode, runs `sillystrings MODE -n MIN -t d FILE` and the same
-with GNU strings, and prints a table of whether the outputs are byte-identical.
+For each file, mode and encoding, runs `sillystrings MODE -e ENC -n MIN -t d FILE`
+and the same with GNU strings, and prints a table of whether the outputs are
+byte-identical. Repeat -e to compare several encodings; the default is s.
 """
 
 import argparse
@@ -64,27 +65,39 @@ def main() -> None:
     parser.add_argument("files", metavar="FILE", nargs="+", type=Path)
     parser.add_argument("--gnu", default=None, help="the GNU strings to run")
     parser.add_argument("-n", dest="min_length", type=int, default=4)
+    parser.add_argument(
+        "-e",
+        dest="encodings",
+        action="append",
+        choices=["s", "S", "l", "b", "L", "B"],
+        help="an encoding to compare (repeatable; default s)",
+    )
     args = parser.parse_args()
+    encodings = args.encodings or ["s"]
     gnu_strings = args.gnu or default_gnu()
     ours_cmd = [sys.executable, "-m", "sillystrings.cli"]
 
     print(f"GNU: {run([gnu_strings, '--version']).decode().splitlines()[0]}\n")
-    print("| file | mode | lines | result |")
-    print("|---|---|---|---|")
+    print("| file | mode | encoding | lines | result |")
+    print("|---|---|---|---|---|")
     failed = False
     differences = []
     for path in args.files:
         for mode in MODES:
-            common = [mode, "-n", str(args.min_length), "-t", "d", str(path)]
-            ours = parse(run([*ours_cmd, *common]))
-            gnu = parse(run([gnu_strings, *common]))
-            if ours == gnu:
-                result = "match"
-            else:
-                result = "**DIFF**"
-                failed = True
-                differences.append(f"{path} {mode}: {first_difference(ours, gnu)}")
-            print(f"| {path.name} | `{mode}` | {len(ours)} | {result} |")
+            for encoding in encodings:
+                common = [mode, "-e", encoding, "-n", str(args.min_length)]
+                common += ["-t", "d", str(path)]
+                ours = parse(run([*ours_cmd, *common]))
+                gnu = parse(run([gnu_strings, *common]))
+                if ours == gnu:
+                    result = "match"
+                else:
+                    result = "**DIFF**"
+                    failed = True
+                    where = first_difference(ours, gnu)
+                    differences.append(f"{path} {mode} -e {encoding}: {where}")
+                cells = [path.name, f"`{mode}`", f"`{encoding}`", len(ours), result]
+                print("| " + " | ".join(map(str, cells)) + " |")
     for line in differences:
         print(f"\n{line}")
     sys.exit(1 if failed else 0)
