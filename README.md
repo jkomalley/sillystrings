@@ -53,23 +53,19 @@ the start of the file.
 
 `-a` and `-d` override each other, so the last one given wins. Thin Mach-O
 files (32- and 64-bit, either byte order) are recognized so far; ELF is
-[planned](https://github.com/jkomalley/sillystrings/issues/3). For
-well-formed objects, the output matches GNU `strings -d`:
+[planned](https://github.com/jkomalley/sillystrings/issues/3). With `-d`:
 
 - "Data" means every section loaded with content from the file, **code
   included**. Zero-filled sections (such as `__bss`) and debug sections are
   skipped.
-- Fat (universal) Mach-O files and static archives (`.a`) are scanned whole.
-- A recognized object with no data sections is scanned whole.
-- `-d` does not apply to stdin, which is always scanned whole.
 - A section whose bytes lie outside the file is skipped, and the rest are
   scanned.
+- Everything else is scanned whole: fat (universal) Mach-O files, static
+  archives (`.a`), objects with no data sections, files that aren't a
+  recognized object or can't be parsed, and stdin.
 
-Malformed input may differ from GNU, which rejects some damaged objects we
-accept and accepts some we reject. Either way `sillystrings` never crashes: a
-damaged header or load commands mean the file is not treated as an object, and
-it is scanned whole. Separately, unlike GNU, where `-` is another spelling of
-`-a`, a `-` argument here means stdin.
+Unlike GNU, where `-` is another spelling of `-a`, a `-` argument here means
+stdin.
 
 This is GNU's behavior, not macOS `strings`'. Apple's `strings` parses Mach-O
 by default, skips only `(__TEXT,__text)`, reads just one slice of a fat file,
