@@ -204,11 +204,17 @@ def main() -> None:
     """
     try:
         _run()
+        # Output that fits in the stdout buffer is otherwise first written by
+        # the interpreter's flush at shutdown, outside this handler, where a
+        # closed pipe prints "Exception ignored" and exits 120 (#56). Every
+        # source is closed by now, so no mapping is open when this raises.
+        sys.stdout.flush()
     except BrokenPipeError:
         # A downstream reader went away -- `sillystrings big.bin | head` is the
-        # normal case. Rebind stdout to devnull before exiting: the interpreter
-        # flushes stdout during shutdown, which would raise a second
-        # BrokenPipeError and print "Exception ignored in:" after we are done.
+        # normal case. Rebind stdout to devnull before exiting: the unwritten
+        # data stays buffered, and the interpreter flushes stdout again during
+        # shutdown, which would raise a second BrokenPipeError and print
+        # "Exception ignored" after we are done.
         # If stdout has no underlying fd (captured or wrapped), there is no
         # real pipe to protect, so failing to rebind is not an error.
         with contextlib.suppress(OSError):
