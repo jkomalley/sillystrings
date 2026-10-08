@@ -5,11 +5,10 @@ name: GNU parity
 # random corpus, and require scripts/compare_gnu.py to find byte-identical output
 # in every encoding under both -d and -a.
 #
-# The reference is one pinned binutils release, built from source for every
-# target as Homebrew builds it, so it reads both formats and only changes when
-# BINUTILS_VERSION does. Distribution packages can't stand in: even Ubuntu's
-# binutils-multiarch leaves out Mach-O. The build takes about a minute and is
-# cached, so later runs restore it in seconds.
+# The reference is Homebrew's binutils, as it is locally (CONTRIBUTING.md), so
+# CI and a contributor's machine compare against the same release. Homebrew
+# builds it for every target, so it reads both formats; distribution packages
+# can't stand in, since even Ubuntu's binutils-multiarch leaves out Mach-O.
 
 on:
   push:
@@ -19,16 +18,13 @@ on:
   merge_group:
 
 env:
-  BINUTILS_VERSION: "2.47"
-  # Homebrew's checksum for the same tarball
-  BINUTILS_SHA256: 3068128c75cda9f898ccb4211d360246e8e195ffcc9dfb655b23ae23a54800e8
-  # In the workspace, since actions/cache rejects paths containing '..'
-  GNU_STRINGS: .gnu-strings/strings
   CLANG: clang-21
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  HOMEBREW_NO_INSTALL_CLEANUP: "1"
 
 jobs:
   compare:
-    # Pinned so the cached build and the image's clang stay compatible
+    # Pinned for the image's clang-21, lld and llvm-lipo
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -37,34 +33,11 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Restore GNU strings
-        id: cache
-        uses: actions/cache@v6.1.0
-        with:
-          path: ${{ env.GNU_STRINGS }}
-          key: gnu-strings-${{ env.BINUTILS_VERSION }}-ubuntu-26.04-${{ runner.arch }}
-
-      - name: Build GNU strings
-        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Install GNU binutils
         run: |
-          cd "$RUNNER_TEMP"
-          tarball="binutils-$BINUTILS_VERSION.tar.bz2"
-          # GNU's mirror redirector sometimes hands out a broken mirror, so retry
-          # and fall back to the binutils project's own release directory
-          for url in "https://ftpmirror.gnu.org/binutils/$tarball" \
-                     "https://sourceware.org/pub/binutils/releases/$tarball"; do
-            curl -fsSL --retry 3 --retry-all-errors -o "$tarball" "$url" && break
-          done
-          echo "$BINUTILS_SHA256  $tarball" | sha256sum -c -
-          tar xjf "$tarball"
-          cd "binutils-$BINUTILS_VERSION"
-          ./configure -q --enable-targets=all --enable-64-bit-bfd --disable-shared \
-            --disable-nls --disable-werror --disable-gdb --disable-gdbserver \
-            --disable-gprofng --disable-sim --disable-ld --disable-gold \
-            --disable-gas --disable-libctf
-          make -s -j"$(nproc)" MAKEINFO=true all-binutils
-          mkdir -p "$GITHUB_WORKSPACE/$(dirname "$GNU_STRINGS")"
-          cp binutils/strings "$GITHUB_WORKSPACE/$GNU_STRINGS"
+          brew=/home/linuxbrew/.linuxbrew/bin/brew
+          $brew install binutils
+          echo "GNU_STRINGS=$($brew --prefix binutils)/bin/strings" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: uv sync
