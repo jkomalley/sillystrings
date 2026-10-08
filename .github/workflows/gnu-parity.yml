@@ -5,10 +5,11 @@ name: GNU parity
 # random corpus, and require scripts/compare_gnu.py to find byte-identical output
 # in every encoding under both -d and -a.
 #
-# The reference is the binutils that ships with the pinned runner image, so it
-# only changes when the image label here does. binutils-multiarch is the same
-# release built for every target, which adds Mach-O; apt requires it to match the
-# installed binutils exactly. The image's clang and lld build both formats.
+# The reference is one pinned binutils release, built from source for every
+# target as Homebrew builds it, so it reads both formats and only changes when
+# BINUTILS_VERSION does. Distribution packages can't stand in: even Ubuntu's
+# binutils-multiarch leaves out Mach-O. The build takes about a minute and is
+# cached, so later runs restore it in seconds.
 
 on:
   push:
@@ -17,11 +18,17 @@ on:
     branches: [main]
   merge_group:
 
+env:
+  BINUTILS_VERSION: "2.47"
+  # Homebrew's checksum for the same tarball
+  BINUTILS_SHA256: 3068128c75cda9f898ccb4211d360246e8e195ffcc9dfb655b23ae23a54800e8
+  GNU_STRINGS: ${{ github.workspace }}/../gnu-strings/strings
+  CLANG: clang-21
+
 jobs:
   compare:
+    # Pinned so the cached build and the image's clang stay compatible
     runs-on: ubuntu-26.04
-    env:
-      CLANG: clang-21
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -29,13 +36,29 @@ jobs:
         with:
           python-version: "3.14"
 
-      # The image's package lists can trail the archive; refresh them only if the
-      # install fails, since that costs several seconds
-      - name: Install multi-target GNU binutils and llvm-lipo
+      - name: Restore GNU strings
+        id: cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ${{ env.GNU_STRINGS }}
+          key: gnu-strings-${{ env.BINUTILS_VERSION }}-ubuntu-26.04-${{ runner.arch }}
+
+      - name: Build GNU strings
+        if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          packages="binutils-multiarch llvm-21"
-          sudo apt-get install -y --no-install-recommends $packages \
-            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends $packages; }
+          cd "$RUNNER_TEMP"
+          tarball="binutils-$BINUTILS_VERSION.tar.bz2"
+          curl -fsSL -o "$tarball" "https://ftpmirror.gnu.org/binutils/$tarball"
+          echo "$BINUTILS_SHA256  $tarball" | sha256sum -c -
+          tar xjf "$tarball"
+          cd "binutils-$BINUTILS_VERSION"
+          ./configure -q --enable-targets=all --enable-64-bit-bfd --disable-shared \
+            --disable-nls --disable-werror --disable-gdb --disable-gdbserver \
+            --disable-gprofng --disable-sim --disable-ld --disable-gold \
+            --disable-gas --disable-libctf
+          make -s -j"$(nproc)" MAKEINFO=true all-binutils
+          mkdir -p "$(dirname "$GNU_STRINGS")"
+          cp binutils/strings "$GNU_STRINGS"
 
       - name: Install dependencies
         run: uv sync
@@ -67,5 +90,5 @@ jobs:
 
       - name: Compare with GNU strings
         run: >
-          uv run scripts/compare_gnu.py --gnu strings
+          uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS"
           -e s -e S -e l -e b -e L -e B corpus/* random/*
