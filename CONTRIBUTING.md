@@ -120,6 +120,16 @@ uv run scripts/compare_gnu.py -e l -e b -e L -e B /bin/ls
 It runs both tools with `-d` and with `-a`, at `-t d`, in each encoding given
 with `-e` (default `s`), and prints a table; it exits 1 if any output differs.
 
+The `GNU parity` workflow runs the same comparison on every pull request, in
+all six encodings: on Linux over objects built from `scripts/gnu_fixture.c`
+(including a 32-bit big-endian one) and a seeded random corpus, and on macOS
+over Mach-O builds of the same fixture. To reproduce the random part locally:
+
+```bash
+uv run scripts/random_corpus.py /tmp/random --seed 0
+uv run scripts/compare_gnu.py -e s -e S -e l -e b -e L -e B /tmp/random/*
+```
+
 The structs and constants are checked separately, against the real system
 headers: `tests/test_macho_constants.py` and `tests/test_elf_constants.py` each
 compile a C program that prints every `offsetof`, `sizeof` and constant, and
