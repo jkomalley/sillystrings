@@ -8,13 +8,22 @@ Pure Python, zero dependencies, comprehensive test coverage.
 
 Requires Python 3.11+.
 
-Install from source using [uv](https://docs.astral.sh/uv/):
+Install from [PyPI](https://pypi.org/project/sillystrings/) as a command-line
+tool with [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/):
 
 ```
-git clone https://github.com/jkomalley/sillystrings.git
-cd sillystrings
-uv sync
+uv tool install sillystrings
+pipx install sillystrings
 ```
+
+Or run it once without installing:
+
+```
+uvx sillystrings /bin/ls
+```
+
+`pip install sillystrings` works too, into whatever environment is active. To
+work on `sillystrings` itself, see [Development](#development).
 
 ## Usage
 
@@ -116,6 +125,8 @@ The project is organized into four layers:
 ## Development
 
 ```
+git clone https://github.com/jkomalley/sillystrings.git
+cd sillystrings
 just install    # or: uv sync && uv run pre-commit install
 just check      # format, lint, type check, and the test suite
 ```
