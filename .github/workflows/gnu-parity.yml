@@ -49,7 +49,12 @@ jobs:
         run: |
           cd "$RUNNER_TEMP"
           tarball="binutils-$BINUTILS_VERSION.tar.bz2"
-          curl -fsSL -o "$tarball" "https://ftpmirror.gnu.org/binutils/$tarball"
+          # GNU's mirror redirector sometimes hands out a broken mirror, so retry
+          # and fall back to the binutils project's own release directory
+          for url in "https://ftpmirror.gnu.org/binutils/$tarball" \
+                     "https://sourceware.org/pub/binutils/releases/$tarball"; do
+            curl -fsSL --retry 3 --retry-all-errors -o "$tarball" "$url" && break
+          done
           echo "$BINUTILS_SHA256  $tarball" | sha256sum -c -
           tar xjf "$tarball"
           cd "binutils-$BINUTILS_VERSION"
