@@ -1,0 +1,80 @@
+name: GNU parity
+
+# GNU binutils strings is the reference for all of sillystrings' output, so check
+# it directly: build objects from scripts/gnu_fixture.c, add a seeded random
+# corpus, and require scripts/compare_gnu.py to find byte-identical output in
+# every encoding under both -d and -a. Both jobs use Homebrew's binutils, the same
+# release as the local reference in CONTRIBUTING.md, rather than whatever older
+# binutils the runner image ships.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+
+env:
+  ENCODINGS: -e s -e S -e l -e b -e L -e B
+
+jobs:
+  elf:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Install GNU binutils and a 32-bit big-endian cross compiler
+        run: |
+          /home/linuxbrew/.linuxbrew/bin/brew install binutils
+          echo "GNU_STRINGS=$(/home/linuxbrew/.linuxbrew/bin/brew --prefix binutils)/bin/strings" >> "$GITHUB_ENV"
+          sudo apt-get update
+          sudo apt-get install -y gcc-powerpc-linux-gnu
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build the corpus
+        run: |
+          mkdir corpus
+          gcc -c -o corpus/fixture.o scripts/gnu_fixture.c
+          gcc -shared -fPIC -o corpus/fixture.so scripts/gnu_fixture.c
+          gcc -o corpus/fixture scripts/gnu_fixture.c
+          powerpc-linux-gnu-gcc -c -o corpus/fixture-ppc32.o scripts/gnu_fixture.c
+          ar rcs corpus/fixture.a corpus/fixture.o
+          cp /usr/bin/ls corpus/ls
+          uv run scripts/random_corpus.py corpus/random
+
+      - name: Compare with GNU strings
+        run: uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS" $ENCODINGS corpus/* corpus/random/*
+
+  mach-o:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          python-version: "3.14"
+
+      - name: Install GNU binutils
+        run: |
+          brew install binutils
+          echo "GNU_STRINGS=$(brew --prefix binutils)/bin/strings" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build the corpus
+        run: |
+          mkdir corpus
+          cc -c -o corpus/fixture.o scripts/gnu_fixture.c
+          cc -shared -o corpus/fixture.dylib scripts/gnu_fixture.c
+          cc -o corpus/fixture scripts/gnu_fixture.c
+          cc -arch arm64 -arch x86_64 -o corpus/fixture-fat scripts/gnu_fixture.c
+
+      - name: Compare with GNU strings
+        run: uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS" $ENCODINGS corpus/*
