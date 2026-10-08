@@ -22,7 +22,8 @@ env:
   BINUTILS_VERSION: "2.47"
   # Homebrew's checksum for the same tarball
   BINUTILS_SHA256: 3068128c75cda9f898ccb4211d360246e8e195ffcc9dfb655b23ae23a54800e8
-  GNU_STRINGS: ${{ github.workspace }}/../gnu-strings/strings
+  # In the workspace, since actions/cache rejects paths containing '..'
+  GNU_STRINGS: .gnu-strings/strings
   CLANG: clang-21
 
 jobs:
@@ -57,8 +58,8 @@ jobs:
             --disable-gprofng --disable-sim --disable-ld --disable-gold \
             --disable-gas --disable-libctf
           make -s -j"$(nproc)" MAKEINFO=true all-binutils
-          mkdir -p "$(dirname "$GNU_STRINGS")"
-          cp binutils/strings "$GNU_STRINGS"
+          mkdir -p "$GITHUB_WORKSPACE/$(dirname "$GNU_STRINGS")"
+          cp binutils/strings "$GITHUB_WORKSPACE/$GNU_STRINGS"
 
       - name: Install dependencies
         run: uv sync
