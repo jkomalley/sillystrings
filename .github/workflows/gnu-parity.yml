@@ -3,9 +3,9 @@ name: GNU parity
 # GNU binutils strings is the reference for all of sillystrings' output, so check
 # it directly: build objects from scripts/gnu_fixture.c, add a seeded random
 # corpus, and require scripts/compare_gnu.py to find byte-identical output in
-# every encoding under both -d and -a. Both jobs use Homebrew's binutils, the same
-# release as the local reference in CONTRIBUTING.md, rather than whatever older
-# binutils the runner image ships.
+# every encoding under both -d and -a. The ELF job uses the binutils that ships
+# with its pinned runner image, so the reference only changes when the image
+# label here does; macOS images ship none, so the Mach-O job installs Homebrew's.
 
 on:
   push:
@@ -19,20 +19,16 @@ env:
 
 jobs:
   elf:
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: its binutils is the reference
+    runs-on: ubuntu-26.04
+    env:
+      GNU_STRINGS: /usr/bin/strings
     steps:
       - uses: actions/checkout@v7.0.1
 
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           python-version: "3.14"
-
-      - name: Install GNU binutils and a 32-bit big-endian cross compiler
-        run: |
-          /home/linuxbrew/.linuxbrew/bin/brew install binutils
-          echo "GNU_STRINGS=$(/home/linuxbrew/.linuxbrew/bin/brew --prefix binutils)/bin/strings" >> "$GITHUB_ENV"
-          sudo apt-get update
-          sudo apt-get install -y gcc-powerpc-linux-gnu
 
       - name: Install dependencies
         run: uv sync
@@ -43,7 +39,10 @@ jobs:
           gcc -c -o corpus/fixture.o scripts/gnu_fixture.c
           gcc -shared -fPIC -o corpus/fixture.so scripts/gnu_fixture.c
           gcc -o corpus/fixture scripts/gnu_fixture.c
-          powerpc-linux-gnu-gcc -c -o corpus/fixture-ppc32.o scripts/gnu_fixture.c
+          # Other word sizes and byte orders, from the image's clang
+          for target in i386-linux-gnu powerpc-linux-gnu s390x-linux-gnu; do
+            clang --target="$target" -ffreestanding -c -o "corpus/fixture-$target.o" scripts/gnu_fixture.c
+          done
           ar rcs corpus/fixture.a corpus/fixture.o
           cp /usr/bin/ls corpus/ls
           uv run scripts/random_corpus.py random
