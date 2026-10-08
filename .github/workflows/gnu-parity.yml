@@ -46,10 +46,10 @@ jobs:
           powerpc-linux-gnu-gcc -c -o corpus/fixture-ppc32.o scripts/gnu_fixture.c
           ar rcs corpus/fixture.a corpus/fixture.o
           cp /usr/bin/ls corpus/ls
-          uv run scripts/random_corpus.py corpus/random
+          uv run scripts/random_corpus.py random
 
       - name: Compare with GNU strings
-        run: uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS" $ENCODINGS corpus/* corpus/random/*
+        run: uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS" $ENCODINGS corpus/* random/*
 
   mach-o:
     runs-on: macos-latest
