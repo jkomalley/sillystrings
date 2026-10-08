@@ -71,3 +71,12 @@ jobs:
         run: >
           uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS"
           -e s -e S -e l -e b -e L -e B corpus/* random/*
+
+      # The output flags don't depend on the object format, and the random
+      # corpus is where whitespace, length and offset edge cases turn up
+      - name: Compare output flags with GNU strings
+        run: >
+          uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS" -m a
+          -e s -e S -e l -e b -e L -e B
+          -x= -x='-w -t d' -x='-f -t d' -x='-n 1 -t d' -x='-n 10 -t x'
+          -x='-t o' -x=-o random/*

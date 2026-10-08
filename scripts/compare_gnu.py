@@ -1,29 +1,30 @@
 #!/usr/bin/env python3
-"""Compare sillystrings with GNU strings, for -d and -a, on any files.
+"""Compare sillystrings with GNU strings on any files, in any modes and flags.
 
-Usage: uv run scripts/compare_gnu.py [--gnu PATH] [-n MIN] [-e ENC ...] FILE [FILE ...]
+Usage: uv run scripts/compare_gnu.py [--gnu PATH] [-n MIN] [-e ENC ...]
+           [-m {d,a} ...] [-x=FLAGS ...] FILE [FILE ...]
 Requires: a GNU strings that understands your files' formats. On macOS,
 `brew install binutils` provides one that reads Mach-O and ELF; it is keg-only, so it
 does not shadow the system strings. That is the default for --gnu.
 
-For each file, mode and encoding, runs `sillystrings MODE -e ENC -n MIN -t d FILE`
-and the same with GNU strings, and prints a table of whether the outputs are
-byte-identical. Repeat -e to compare several encodings; the default is s.
+For each file, mode, encoding and flag set, runs
+`sillystrings MODE -e ENC -n MIN FLAGS FILE` and the same with GNU strings, and
+prints a table of whether the outputs are byte-identical. Each option repeats:
+-e defaults to s, -m to both d and a, and -x, a set of extra flags split like a
+shell would, to "-t d". Pass -x as -x="-w -t x" or -x=-f, with "=", or argparse
+reads a flag set that starts with a dash as an option of its own.
 """
 
 import argparse
 import contextlib
 import io
-import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 from unittest import mock
 
 from sillystrings import cli
-
-MODES = ["-d", "-a"]
-LINE = re.compile(rb" *(\d+) (.*)", re.DOTALL)
 
 
 def default_gnu() -> str:
@@ -61,23 +62,17 @@ def run_ours(args: list[str]) -> bytes:
     return stdout.buffer.getvalue()
 
 
-def parse(output: bytes) -> list[tuple[int, bytes]]:
-    """Split `-t d` output into (offset, string) pairs."""
-    pairs = []
-    for line in output.split(b"\n")[:-1]:
-        match = LINE.fullmatch(line)
-        if match is None:
-            sys.exit(f"unexpected output line: {line!r}")
-        pairs.append((int(match[1]), match[2]))
-    return pairs
+def first_difference(ours: bytes, gnu: bytes) -> str:
+    """Describe the first output line where two outputs differ.
 
-
-def first_difference(ours: list, gnu: list) -> str:
-    """Describe where two lists of (offset, string) first differ."""
-    for index, (a, b) in enumerate(zip(ours, gnu, strict=False)):
+    Outputs are compared whole, since with -w a string can itself contain a
+    newline; splitting on newlines is only to point at roughly where they part.
+    """
+    ours_lines, gnu_lines = ours.split(b"\n"), gnu.split(b"\n")
+    for index, (a, b) in enumerate(zip(ours_lines, gnu_lines, strict=False)):
         if a != b:
             return f"line {index + 1}: ours {a!r}, GNU {b!r}"
-    return f"ours has {len(ours)} lines, GNU has {len(gnu)}"
+    return f"ours has {len(ours_lines)} lines, GNU has {len(gnu_lines)}"
 
 
 def main() -> None:
@@ -93,31 +88,58 @@ def main() -> None:
         choices=["s", "S", "l", "b", "L", "B"],
         help="an encoding to compare (repeatable; default s)",
     )
+    parser.add_argument(
+        "-m",
+        dest="modes",
+        action="append",
+        choices=["d", "a"],
+        help="a mode to compare, -d or -a, without its dash (repeatable; default both)",
+    )
+    parser.add_argument(
+        "-x",
+        dest="flag_sets",
+        action="append",
+        metavar="FLAGS",
+        help='a set of extra flags, such as -x="-w -t x"; write it with "=" so it'
+        ' is not read as an option (repeatable; default "-t d")',
+    )
     args = parser.parse_args()
     encodings = args.encodings or ["s"]
+    modes = [f"-{mode}" for mode in args.modes or ["d", "a"]]
+    flag_sets = args.flag_sets or ["-t d"]
     gnu_strings = args.gnu or default_gnu()
 
     print(f"GNU: {run([gnu_strings, '--version']).decode().splitlines()[0]}\n")
-    print("| file | mode | encoding | lines | result |")
-    print("|---|---|---|---|---|")
+    print("| file | mode | encoding | flags | lines | result |")
+    print("|---|---|---|---|---|---|")
     failed = False
     differences = []
     for path in args.files:
-        for mode in MODES:
+        for mode in modes:
             for encoding in encodings:
-                common = [mode, "-e", encoding, "-n", str(args.min_length)]
-                common += ["-t", "d", str(path)]
-                ours = parse(run_ours(common))
-                gnu = parse(run([gnu_strings, *common]))
-                if ours == gnu:
-                    result = "match"
-                else:
-                    result = "**DIFF**"
-                    failed = True
-                    where = first_difference(ours, gnu)
-                    differences.append(f"{path} {mode} -e {encoding}: {where}")
-                cells = [path.name, f"`{mode}`", f"`{encoding}`", len(ours), result]
-                print("| " + " | ".join(map(str, cells)) + " |")
+                for flags in flag_sets:
+                    common = [mode, "-e", encoding, "-n", str(args.min_length)]
+                    common += [*shlex.split(flags), str(path)]
+                    ours = run_ours(common)
+                    gnu = run([gnu_strings, *common])
+                    if ours == gnu:
+                        result = "match"
+                    else:
+                        result = "**DIFF**"
+                        failed = True
+                        where = first_difference(ours, gnu)
+                        differences.append(
+                            f"{path} {mode} -e {encoding} {flags}: {where}"
+                        )
+                    cells = [
+                        path.name,
+                        f"`{mode}`",
+                        f"`{encoding}`",
+                        f"`{flags}`",
+                        ours.count(b"\n"),
+                        result,
+                    ]
+                    print("| " + " | ".join(map(str, cells)) + " |")
     for line in differences:
         print(f"\n{line}")
     sys.exit(1 if failed else 0)
