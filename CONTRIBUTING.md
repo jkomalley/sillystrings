@@ -120,6 +120,17 @@ uv run scripts/compare_gnu.py -e l -e b -e L -e B /bin/ls
 It runs both tools with `-d` and with `-a`, at `-t d`, in each encoding given
 with `-e` (default `s`), and prints a table; it exits 1 if any output differs.
 
+The `GNU parity` workflow runs the same comparison on every pull request, in
+all six encodings, over ELF and Mach-O builds of `scripts/gnu_fixture.c` in
+several word sizes and byte orders plus a seeded random corpus. Like the local
+setup above, it compares with Homebrew's binutils, so it moves to a new GNU
+release when Homebrew does. To reproduce the random part locally:
+
+```bash
+uv run scripts/random_corpus.py /tmp/random --seed 0
+uv run scripts/compare_gnu.py -e s -e S -e l -e b -e L -e B /tmp/random/*
+```
+
 The structs and constants are checked separately, against the real system
 headers: `tests/test_macho_constants.py` and `tests/test_elf_constants.py` each
 compile a C program that prints every `offsetof`, `sizeof` and constant, and
