@@ -1,11 +1,14 @@
 name: GNU parity
 
 # GNU binutils strings is the reference for all of sillystrings' output, so check
-# it directly: build objects from scripts/gnu_fixture.c, add a seeded random
-# corpus, and require scripts/compare_gnu.py to find byte-identical output in
-# every encoding under both -d and -a. The ELF job uses the binutils that ships
-# with its pinned runner image, so the reference only changes when the image
-# label here does; macOS images ship none, so the Mach-O job installs Homebrew's.
+# it directly: build ELF and Mach-O files from scripts/gnu_fixture.c, add a seeded
+# random corpus, and require scripts/compare_gnu.py to find byte-identical output
+# in every encoding under both -d and -a.
+#
+# The reference is the binutils that ships with the pinned runner image, so it
+# only changes when the image label here does. binutils-multiarch is the same
+# release built for every target, which adds Mach-O; apt requires it to match the
+# installed binutils exactly. The image's clang and lld build both formats.
 
 on:
   push:
@@ -14,15 +17,11 @@ on:
     branches: [main]
   merge_group:
 
-env:
-  ENCODINGS: -e s -e S -e l -e b -e L -e B
-
 jobs:
-  elf:
-    # Pinned rather than ubuntu-latest: its binutils is the reference
+  compare:
     runs-on: ubuntu-26.04
     env:
-      GNU_STRINGS: /usr/bin/strings
+      CLANG: clang-21
     steps:
       - uses: actions/checkout@v7.0.1
 
@@ -30,50 +29,43 @@ jobs:
         with:
           python-version: "3.14"
 
+      # The image's package lists can trail the archive; refresh them only if the
+      # install fails, since that costs several seconds
+      - name: Install multi-target GNU binutils and llvm-lipo
+        run: |
+          packages="binutils-multiarch llvm-21"
+          sudo apt-get install -y --no-install-recommends $packages \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends $packages; }
+
       - name: Install dependencies
         run: uv sync
 
       - name: Build the corpus
         run: |
           mkdir corpus
+          # ELF, linked by the system toolchain
           gcc -c -o corpus/fixture.o scripts/gnu_fixture.c
           gcc -shared -fPIC -o corpus/fixture.so scripts/gnu_fixture.c
           gcc -o corpus/fixture scripts/gnu_fixture.c
-          # Other word sizes and byte orders, from the image's clang
-          for target in i386-linux-gnu powerpc-linux-gnu s390x-linux-gnu; do
-            clang --target="$target" -ffreestanding -c -o "corpus/fixture-$target.o" scripts/gnu_fixture.c
-          done
           ar rcs corpus/fixture.a corpus/fixture.o
           cp /usr/bin/ls corpus/ls
+          # ELF in the other word sizes and byte orders
+          for target in i386-linux-gnu powerpc-linux-gnu s390x-linux-gnu; do
+            $CLANG --target="$target" -ffreestanding -c \
+              -o "corpus/fixture-$target.o" scripts/gnu_fixture.c
+          done
+          # Thin Mach-O of each kind, then a fat executable
+          for arch in arm64 x86_64; do
+            macho=(--target="$arch-apple-macos11" -ffreestanding -nostdlib -fuse-ld=lld)
+            $CLANG "${macho[@]}" -c -o "corpus/fixture-$arch-macho.o" scripts/gnu_fixture.c
+            $CLANG "${macho[@]}" -shared -o "corpus/fixture-$arch.dylib" scripts/gnu_fixture.c
+            $CLANG "${macho[@]}" -Wl,-e,_main -o "corpus/fixture-$arch-macho" scripts/gnu_fixture.c
+          done
+          llvm-lipo-21 -create corpus/fixture-arm64-macho corpus/fixture-x86_64-macho \
+            -output corpus/fixture-fat-macho
           uv run scripts/random_corpus.py random
 
       - name: Compare with GNU strings
-        run: uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS" $ENCODINGS corpus/* random/*
-
-  mach-o:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7.0.1
-
-      - uses: astral-sh/setup-uv@v10.2.0
-        with:
-          python-version: "3.14"
-
-      - name: Install GNU binutils
-        run: |
-          brew install binutils
-          echo "GNU_STRINGS=$(brew --prefix binutils)/bin/strings" >> "$GITHUB_ENV"
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Build the corpus
-        run: |
-          mkdir corpus
-          cc -c -o corpus/fixture.o scripts/gnu_fixture.c
-          cc -shared -o corpus/fixture.dylib scripts/gnu_fixture.c
-          cc -o corpus/fixture scripts/gnu_fixture.c
-          cc -arch arm64 -arch x86_64 -o corpus/fixture-fat scripts/gnu_fixture.c
-
-      - name: Compare with GNU strings
-        run: uv run scripts/compare_gnu.py --gnu "$GNU_STRINGS" $ENCODINGS corpus/*
+        run: >
+          uv run scripts/compare_gnu.py --gnu strings
+          -e s -e S -e l -e b -e L -e B corpus/* random/*
