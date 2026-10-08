@@ -121,11 +121,11 @@ It runs both tools with `-d` and with `-a`, at `-t d`, in each encoding given
 with `-e` (default `s`), and prints a table; it exits 1 if any output differs.
 
 The `GNU parity` workflow runs the same comparison on every pull request, in
-all six encodings: on Linux over ELF builds of `scripts/gnu_fixture.c` in
-several word sizes and byte orders plus a seeded random corpus, using the GNU
-`strings` that ships with the workflow's pinned Ubuntu image, and on macOS over
-Mach-O builds of the same fixture, using Homebrew's. To reproduce the random
-part locally:
+all six encodings, over ELF and Mach-O builds of `scripts/gnu_fixture.c` in
+several word sizes and byte orders plus a seeded random corpus. Its reference is
+the GNU binutils release named by `BINUTILS_VERSION` in the workflow, built
+from source for every target as Homebrew builds it and cached, so it changes
+only when that line does. To reproduce the random part locally:
 
 ```bash
 uv run scripts/random_corpus.py /tmp/random --seed 0
