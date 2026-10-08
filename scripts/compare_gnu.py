@@ -12,10 +12,15 @@ byte-identical. Repeat -e to compare several encodings; the default is s.
 """
 
 import argparse
+import contextlib
+import io
 import re
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
+
+from sillystrings import cli
 
 MODES = ["-d", "-a"]
 LINE = re.compile(rb" *(\d+) (.*)", re.DOTALL)
@@ -38,6 +43,22 @@ def default_gnu() -> str:
 def run(argv: list[str]) -> bytes:
     """Run a command and return its stdout, which is all either tool prints."""
     return subprocess.run(argv, capture_output=True, check=True).stdout
+
+
+def run_ours(args: list[str]) -> bytes:
+    """Run sillystrings in this process and return what it wrote to stdout.
+
+    Starting a fresh interpreter per run cost about 60ms, which dominated a
+    comparison of many small files; the installed entry point is covered by the
+    test suite's subprocess tests instead.
+    """
+    stdout = io.TextIOWrapper(io.BytesIO())
+    with (
+        mock.patch.object(sys, "argv", ["sillystrings", *args]),
+        contextlib.redirect_stdout(stdout),
+    ):
+        cli.main()
+    return stdout.buffer.getvalue()
 
 
 def parse(output: bytes) -> list[tuple[int, bytes]]:
@@ -75,7 +96,6 @@ def main() -> None:
     args = parser.parse_args()
     encodings = args.encodings or ["s"]
     gnu_strings = args.gnu or default_gnu()
-    ours_cmd = [sys.executable, "-m", "sillystrings.cli"]
 
     print(f"GNU: {run([gnu_strings, '--version']).decode().splitlines()[0]}\n")
     print("| file | mode | encoding | lines | result |")
@@ -87,7 +107,7 @@ def main() -> None:
             for encoding in encodings:
                 common = [mode, "-e", encoding, "-n", str(args.min_length)]
                 common += ["-t", "d", str(path)]
-                ours = parse(run([*ours_cmd, *common]))
+                ours = parse(run_ours(common))
                 gnu = parse(run([gnu_strings, *common]))
                 if ours == gnu:
                     result = "match"
