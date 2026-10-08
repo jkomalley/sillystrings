@@ -115,16 +115,21 @@ to a format parser should be checked against GNU itself. On macOS,
 uv run scripts/compare_gnu.py /bin/ls build/foo.o some.dylib
 uv run scripts/compare_gnu.py --gnu /path/to/strings -n 8 file.o
 uv run scripts/compare_gnu.py -e l -e b -e L -e B /bin/ls
+uv run scripts/compare_gnu.py -m a -x= -x='-w -t x' -x=-f file.bin
 ```
 
-It runs both tools with `-d` and with `-a`, at `-t d`, in each encoding given
-with `-e` (default `s`), and prints a table; it exits 1 if any output differs.
+It runs both tools with `-d` and with `-a` (or each mode given with `-m`), in
+each encoding given with `-e` (default `s`), with each set of extra flags given
+with `-x` (default `-t d`), and prints a table; it exits 1 if any output
+differs. Write `-x` with `=`, or a flag set starting with a dash is read as an
+option of its own.
 
 The `GNU parity` workflow runs the same comparison on every pull request, in
 all six encodings, over ELF and Mach-O builds of `scripts/gnu_fixture.c` in
-several word sizes and byte orders plus a seeded random corpus. Like the local
-setup above, it compares with Homebrew's binutils, so it moves to a new GNU
-release when Homebrew does. To reproduce the random part locally:
+several word sizes and byte orders plus a seeded random corpus, then compares
+the output flags (`-w`, `-f`, `-n`, `-t`, `-o` and no `-t`) on the random
+corpus. Like the local setup above, it compares with Homebrew's binutils, so it
+moves to a new GNU release when Homebrew does. To reproduce the random part locally:
 
 ```bash
 uv run scripts/random_corpus.py /tmp/random --seed 0
