@@ -6,11 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `sillystrings` is a pure-Python reimplementation of the Unix `strings` utility: it extracts printable character sequences from binary files. Python 3.11+, src layout, managed with `uv`, zero runtime dependencies. Published on PyPI.
 
+**GNU binutils `strings` is the reference for all behavior**, not macOS `strings`: flags, defaults, which strings are found, offsets, and output bytes. Check any change that can affect output with `scripts/compare_gnu.py`, which works for any `-e`, against Homebrew `binutils`' GNU `strings` (CONTRIBUTING.md → Verifying `-d` against GNU). The deliberate differences are documented: `-` means stdin, not `-a`, and malformed objects under `-d` (see Key design decisions). An issue or older doc that implies otherwise predates this decision. Check it against GNU before implementing it.
+
 ## Commands
 
 Recipes live in the `justfile`; `just` (or `just --list`) prints them with their descriptions. Do not restate their expansions here — that is what rots.
 
-- `just install` — sync the venv and install the git hooks
+- `just install` — sync the venv and install the git hooks. Run it only in the main checkout, never in a `git worktree`: hooks live in the shared `.git/hooks` and record the installing venv's path, so installing from a worktree breaks commits everywhere once that worktree is removed. In a worktree, `uv sync` is enough.
 - `just run --help` — drive the CLI locally
 - `just test` / `just test-cov` — the suite without / with the 100% coverage gate (the gate lives in `addopts`; `just test` opts out with `--no-cov`)
 - `just format` / `just format-check`, `just lint` / `just lint-check`, `just typecheck`
@@ -45,9 +47,12 @@ Key design decisions:
 ## Workflow
 
 - Every feature, fix, or other change gets its own branch and pull request — no direct commits to main.
-- Commits must be atomic and follow Conventional Commits (`feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `ci`, `deps`): one logical change per commit.
+- Commits must be atomic and follow Conventional Commits (`feat`, `fix`, `perf`, `docs`, `chore`, `refactor`, `test`, `ci`, `deps`): one logical change per commit. Use `perf` for a speed or memory improvement that leaves output unchanged. Users notice it, so it gets a `### Changed` CHANGELOG entry, unlike `refactor`.
 - PRs that resolve an issue reference it with `Closes #N` so it closes automatically on merge.
 - **PRs are merged with a merge commit** — never squashed or rebased. Both break stacked PRs, and this project family works in stacks.
+- **Bring a PR branch up to date by merging `main` into it, never by rebasing, and never force-push.** Review happens commit by commit, so history already reviewed must not change.
+- **CI only runs on PRs that target `main`** (`ci.yml`). A stacked PR whose base is another feature branch gets no CI, so run `just check` locally, and retarget it to `main` once its base merges.
+- **To cite the PR number in a CHANGELOG entry, open the PR first**, then add the entry as its own `docs:` commit.
 - **Keep `CHANGELOG.md` release-ready.** Any user-facing change adds a bullet under `## [Unreleased]` in the same PR (internal-only refactors, CI, test, and docs changes are exempt). Entries follow the existing Keep a Changelog style — grouped under `### Added`/`### Changed`/`### Fixed`/`### Removed`, one line each, ending with the PR ref `(#N)`.
 - **Releases are automated and notes come from the changelog — never hand-written commit dumps.** The CD workflow publishes to PyPI when a version bump lands on `main`, then publishes a GitHub release whose body is that version's `CHANGELOG.md` section (extracted between its `## [x.y.z]` heading and the next; it fails the release if the section is missing). Cutting a release is a `chore: release vX.Y.Z` PR that bumps the version and renames `## [Unreleased]` to `## [X.Y.Z] - <date>` (adding a fresh empty `## [Unreleased]` and updating the compare links). See CONTRIBUTING.md → Releasing.
 
