@@ -4,7 +4,7 @@ import contextlib
 import mmap
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import get_args
@@ -42,7 +42,7 @@ class Source:
 
 
 @contextlib.contextmanager
-def open_source(name: str) -> Iterator[Source]:
+def open_source(name: str) -> Generator[Source]:
     """Open a file, or stdin for "-", as a Source valid for the with block.
 
     Files are memory-mapped rather than read, so the OS pages them in as the
